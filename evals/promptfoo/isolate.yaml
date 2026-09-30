@@ -1,0 +1,25 @@
+# Guardrail isolation eval: every case goes through the LiteLLM gateway with s1guard on,
+# but the "model" is the deterministic mock-echo, so the score is the guardrail's own
+# block/pass decision (classification recall / FPR), with no LLM judge.
+#
+#   bash evals/run.sh isolate
+description: "s1guard isolation: corpus smoke (input) + agentic/MCP/output stage suite"
+
+env:
+  PROMPTFOO_DISABLE_TELEMETRY: "true"
+  PROMPTFOO_DISABLE_REMOTE_GENERATION: "true"
+
+evaluateOptions:
+  cache: false
+  maxConcurrency: 4
+
+prompts: ["{{prompt}}"]
+
+providers:
+  - id: file://provider_gateway.py
+    label: s1guard
+    config: {model: mock-echo, guardrails: [s1guard]}
+
+tests:
+  - file://../data/corpus_smoke.json   # ai-security-evals sample, disjoint from the calibration split
+  - file://smoke_stages.yaml

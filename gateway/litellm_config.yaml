@@ -1,0 +1,35 @@
+# Local LiteLLM gateway with the s1guard System One guardrail.
+#   bash gateway/start_gateway.sh          # :4000, master key sk-local
+#
+# s1guard is a NAMED guardrail (not default_on) so evals can A/B it per request:
+#   {"model": "gemma4:e2b", "guardrails": ["s1guard"], "messages": [...]}
+# Set default_on: true to enforce it on every request.
+
+model_list:
+  # Local Ollama models (no keys, no spend). `ollama serve` + `ollama pull <model>`.
+  # think: false -- gemma4 otherwise spends max_tokens on hidden reasoning and returns empty content.
+  - model_name: gemma4
+    litellm_params: {model: ollama/gemma4, api_base: http://localhost:11434, timeout: 600, num_ctx: 16384, think: false}
+  - model_name: gemma4:e2b
+    litellm_params: {model: ollama/gemma4:e2b, api_base: http://localhost:11434, timeout: 600, num_ctx: 16384, think: false}
+  - model_name: qwen3.5
+    litellm_params: {model: ollama/qwen3.5, api_base: http://localhost:11434, timeout: 600, num_ctx: 16384, think: false}
+
+  # Deterministic mock for guardrail-isolation evals: replies per the system-message
+  # directive (MOCK_OUTPUT: / MOCK_TOOL_CALL:), see gateway/mock_llm.py.
+  - model_name: mock-echo
+    litellm_params: {model: mock-echo/echo}
+
+litellm_settings:
+  custom_provider_map:
+    - {provider: mock-echo, custom_handler: mock_llm.mock_echo}
+
+guardrails:
+  - guardrail_name: s1guard
+    litellm_params:
+      guardrail: s1guard.litellm_guardrail.S1Guardrail
+      mode: [pre_call, post_call, pre_mcp_call, post_mcp_call]
+      default_on: false
+
+general_settings:
+  master_key: sk-local

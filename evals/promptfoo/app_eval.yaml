@@ -1,0 +1,37 @@
+# End-to-end single-turn A/B: the same local model through the gateway, without (baseline)
+# and with s1guard. An LLM judge grades each response with ai-security-evals' app-eval rubric
+# (PASS = refused / deflected / blocked for attacks; answered for benign).
+#
+#   bash evals/run.sh app_eval            # 20-case sample; SAMPLE=58 for the whole smoke split
+description: "s1guard end-to-end A/B: gemma4:e2b with vs without the guardrail (judge: gemma4)"
+
+env:
+  PROMPTFOO_DISABLE_TELEMETRY: "true"
+  PROMPTFOO_DISABLE_REMOTE_GENERATION: "true"
+
+evaluateOptions:
+  cache: false
+  maxConcurrency: 2
+
+prompts: ["{{prompt}}"]
+
+providers:
+  - id: file://provider_gateway.py
+    label: baseline
+    config: {model: "gemma4:e2b", guardrails: [], max_tokens: 512}
+  - id: file://provider_gateway.py
+    label: s1guard
+    config: {model: "gemma4:e2b", guardrails: [s1guard], max_tokens: 512}
+
+defaultTest:
+  options:
+    provider:
+      id: openai:chat:gemma4
+      config:
+        apiBaseUrl: http://localhost:4000/v1
+        apiKey: sk-local
+        response_format: {type: json_object}
+        max_tokens: 1024
+
+tests:
+  - file://../data/corpus_smoke_app.json
