@@ -26,7 +26,7 @@ from litellm.exceptions import GuardrailRaisedException
 from litellm.integrations.custom_guardrail import CustomGuardrail
 from litellm.types.utils import GenericGuardrailAPIInputs
 
-from .guard import Guard, Verdict, tool_definition_text
+from .guard import Guard, Verdict, last_user_message, system_prompt_of, tool_definition_text
 
 
 class S1Guardrail(CustomGuardrail):
@@ -64,7 +64,13 @@ class S1Guardrail(CustomGuardrail):
             verdicts += [self.guard.check(tool_definition_text(t), "tool_definition")
                          for t in inputs.get("tools") or [] if t.get("function", {}).get("description")]
             return Verdict.merge(verdicts)
+        # The full request messages carry the system prompt even when the scoped
+        # structured_messages skip it; context questions read it.
+        system = system_prompt_of(request_data.get("messages") or inputs.get("structured_messages") or [])
         if input_type == "request":
-            messages = inputs.get("structured_messages") or [{"role": "user", "content": t} for t in texts]
-            return self.guard.check_request(list(messages), inputs.get("tools"))
-        return self.guard.check_response("\n".join(texts), inputs.get("tool_calls"))
+            messages = list(inputs.get("structured_messages") or [{"role": "user", "content": t} for t in texts])
+            if system and not system_prompt_of(messages):
+                messages.insert(0, {"role": "system", "content": system})
+            return self.guard.check_request(messages, inputs.get("tools"))
+        user_request = last_user_message(request_data.get("messages") or [])  # what the agent was asked to do
+        return self.guard.check_response("\n".join(texts), inputs.get("tool_calls"), system, user_request)

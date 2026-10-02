@@ -1,6 +1,7 @@
 """Build the calibration (dev) split and the promptfoo smoke split from the
-ai-security-evals corpus. The two splits are disjoint, so the smoke evals are never scored on
-cases the thresholds were tuned on.
+ai-security-evals corpus. The two splits are disjoint, and smoke cases are drawn only from the
+detection benchmark's TEST groups (evals/benchmark), so neither threshold calibration nor
+fine-tuning has seen them.
 
     uv run python evals/build_datasets.py [--evals-repo ../ai-security-evals]
 
@@ -13,6 +14,7 @@ Writes:
 import argparse
 import json
 import random
+import sys
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -43,10 +45,14 @@ def main() -> None:
                 m = c["metadata"]
                 f.write(json.dumps({"id": m["id"], "text": c["vars"]["prompt"], "attack": m["type"] != "benign",
                                     "category": cat, "family": m.get("technique_family", "")}) + "\n")
+    # Smoke cases come only from benchmark TEST groups (never seen by fine-tuning or calibration).
+    sys.path.insert(0, str(HERE / "benchmark"))
+    from sources import _group, split_of
+
     smoke = []
     for cat, n in SMOKE_N.items():
-        for c in by_cat[cat][DEV_N[cat]:DEV_N[cat] + n]:
-            smoke.append(c | {"vars": c["vars"] | {"stage": "input"}})
+        held_out = [c for c in by_cat[cat][DEV_N[cat]:] if split_of(_group(c["metadata"]["id"])) == "test"]
+        smoke += [c | {"vars": c["vars"] | {"stage": "input"}} for c in held_out[:n]]
     (out / "corpus_smoke.json").write_text(json.dumps(smoke, indent=1))
 
     # Same cases with app-eval's llm-rubric assertions, for the end-to-end A/B (model + judge).

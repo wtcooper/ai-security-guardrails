@@ -35,6 +35,9 @@ class Risk:
     question: str = ""
     criteria: Optional[Dict[str, str]] = None
     threshold: float = 1.0
+    context_question: str = ""   # asked instead of `question` when its context is known
+    context_threshold: Optional[float] = None  # threshold for the context variant (default: threshold)
+    context_field: str = "system_prompt"       # which context the context question reads
 
 
 @dataclass
@@ -108,21 +111,29 @@ class Guard:
         self.backend = backend or backend_from_env()
         self.risks = load_policy(policy or os.environ.get("S1GUARD_POLICY"))
         self._questions = {stage: self._build_questions(stage, fld) for stage, fld in STAGE_FIELDS.items()}
+        self._context_questions = {stage: self._build_questions(stage, fld, context=True)
+                                   for stage, fld in STAGE_FIELDS.items()}
         self._tool_def_cache: Dict[str, Verdict] = {}  # tool definitions repeat on every request
 
-    def _build_questions(self, stage: str, fld: str) -> Dict[str, dict]:
+    def _build_questions(self, stage: str, fld: str, context: bool = False) -> Dict[str, dict]:
+        """The stage's question battery; with context=True only the risks that have a
+        `context_question`, which also reads its `context_field` from the state. A risk with only
+        a context question is asked only when that context is known."""
         qs = {}
         for r in self.risks:
-            if r.kind == "question" and stage in r.stages:
-                q = {"type": "noul", "instructions": r.question.format(field=fld)}
+            if r.kind == "question" and stage in r.stages and (r.context_question if context else r.question):
+                q = {"type": "noul", "instructions": (r.context_question if context else r.question).format(field=fld)}
                 if r.criteria:
                     q["criteria"] = r.criteria
                 qs[r.id] = q
         return qs
 
-    def check(self, content: str | List[str], stage: str = "input") -> Verdict:
+    def check(self, content: str | List[str], stage: str = "input", system_prompt: Optional[str] = None,
+              user_request: Optional[str] = None) -> Verdict:
         """Classify one piece of content at one stage. `content` is a list of user turns
-        (oldest first) for the `conversation` stage, a string otherwise."""
+        (oldest first) for the `conversation` stage, a string otherwise. When a risk's context is
+        known (`system_prompt`, or the `user_request` behind a tool call), its `context_question`
+        is asked against it instead."""
         if stage not in STAGE_FIELDS:
             raise ValueError(f"unknown stage {stage!r}; one of {sorted(STAGE_FIELDS)}")
         if stage == "tool_definition" and content in self._tool_def_cache:
@@ -133,9 +144,18 @@ class Guard:
         for r in self.risks:
             if r.kind == "detector" and stage in r.stages:
                 scores[r.id] = DETECTORS[r.id](text)
-        if self._questions[stage] and text.strip():
-            scores |= self.backend.predict({STAGE_FIELDS[stage]: content}, self._questions[stage])
-        v = self._decide(stage, scores)
+        fld = STAGE_FIELDS[stage]
+        context = {k: v for k, v in (("system_prompt", system_prompt), ("user_request", user_request)) if v}
+        field_of = {r.id: r.context_field for r in self.risks}
+        ctx = {q: d for q, d in self._context_questions[stage].items() if field_of[q] in context}
+        plain = {q: d for q, d in self._questions[stage].items() if q not in ctx}
+        if plain and text.strip():
+            scores |= self.backend.predict({fld: content}, plain)
+        for cf in dict.fromkeys(field_of[q] for q in ctx):  # one call per context: other questions keep
+            group = {q: d for q, d in ctx.items() if field_of[q] == cf}   # the state they were calibrated on
+            if text.strip():
+                scores |= self.backend.predict({cf: context[cf], fld: content}, group)
+        v = self._decide(stage, scores, set(ctx) if text.strip() else set())
         v.latency_ms = round((time.perf_counter() - t0) * 1000, 1)
         if stage == "tool_definition":
             if len(self._tool_def_cache) > 4096:
@@ -143,12 +163,14 @@ class Guard:
             self._tool_def_cache[content] = v
         return v
 
-    def _decide(self, stage: str, scores: Dict[str, float]) -> Verdict:
+    def _decide(self, stage: str, scores: Dict[str, float], context_ids: frozenset = frozenset()) -> Verdict:
         v = Verdict(scores={stage: {k: round(s, 4) for k, s in scores.items()}})
         for r in self.risks:
             if r.id not in scores:
                 continue
             threshold = 0.5 if r.kind == "detector" else r.threshold
+            if r.id in context_ids and r.context_threshold is not None:
+                threshold = r.context_threshold
             if scores[r.id] >= threshold:
                 v.findings.append(Finding(r.id, r.name, stage, round(scores[r.id], 4), threshold,
                                           r.action, r.frameworks))
@@ -161,13 +183,14 @@ class Guard:
         """Screen an OpenAI-style chat request: the newest user turn(s), multi-turn escalation,
         tool results added since the last assistant turn, and tool definitions."""
         verdicts = []
+        system = system_prompt_of(messages)
         tail = _new_messages(messages)
         for m in tail:
             text = message_text(m)
             if not text.strip():
                 continue
             if m.get("role") == "user":
-                verdicts.append(self.check(text, "input"))
+                verdicts.append(self.check(text, "input", system))
             elif m.get("role") in ("tool", "function"):
                 verdicts.append(self.check(text, "tool_result"))
         user_turns = [message_text(m) for m in messages if m.get("role") == "user"]
@@ -177,10 +200,11 @@ class Guard:
             verdicts.append(self.check(tool_definition_text(t), "tool_definition"))
         return Verdict.merge(verdicts)
 
-    def check_response(self, text: str = "", tool_calls: Optional[List[dict]] = None) -> Verdict:
-        verdicts = [self.check(text, "output")] if text.strip() else []
+    def check_response(self, text: str = "", tool_calls: Optional[List[dict]] = None,
+                       system_prompt: Optional[str] = None, user_request: Optional[str] = None) -> Verdict:
+        verdicts = [self.check(text, "output", system_prompt)] if text.strip() else []
         for tc in tool_calls or []:
-            verdicts.append(self.check(tool_call_text(tc), "tool_call"))
+            verdicts.append(self.check(tool_call_text(tc), "tool_call", user_request=user_request))
         return Verdict.merge(verdicts)
 
 
@@ -190,6 +214,18 @@ def _new_messages(messages: List[dict]) -> List[dict]:
         if messages[i].get("role") == "assistant":
             return messages[i + 1:]
     return messages
+
+
+def last_user_message(messages: List[dict]) -> Optional[str]:
+    for m in reversed(messages):
+        if m.get("role") == "user" and message_text(m).strip():
+            return message_text(m)
+    return None
+
+
+def system_prompt_of(messages: List[dict]) -> Optional[str]:
+    text = "\n".join(message_text(m) for m in messages if m.get("role") in ("system", "developer"))
+    return text or None
 
 
 def message_text(m: dict) -> str:

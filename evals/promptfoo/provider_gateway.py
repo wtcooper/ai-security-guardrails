@@ -4,8 +4,10 @@ vars.stage (default input) decides where {{prompt}} is placed in the chat reques
   input            user message
   tool_result      a tool message answering an earlier tool call
   tool_definition  the description of a tool offered in `tools`
-  output           the model's reply        (model mock-echo, via a MOCK_OUTPUT system directive)
+  output           the model's reply        (model mock-echo, via a MOCK_OUTPUT directive)
   tool_call        a tool call the model makes (mock-echo, MOCK_TOOL_CALL; prompt = {"name","arguments"} JSON)
+vars.system_prompt (optional) is sent as the request's system prompt; vars.user_request (optional)
+replaces the generic user turn for the tool_result/tool_definition/output/tool_call stages.
 A prompt that is a JSON list of chat messages (promptfoo multi-turn strategies) is sent as-is.
 
 Provider config: {model, guardrails: [..]} -- guardrails [] is the no-control baseline.
@@ -22,8 +24,15 @@ URL = os.environ.get("GATEWAY_URL", "http://localhost:4000") + "/v1/chat/complet
 KEY = os.environ.get("GATEWAY_API_KEY", "sk-local")
 
 
-def build_request(prompt: str, stage: str, model: str) -> dict:
-    user = {"role": "user", "content": "Please help with my task."}
+def build_request(prompt: str, stage: str, model: str, system_prompt: str = "", user_request: str = "") -> dict:
+    body = _build(prompt, stage, model, user_request)
+    if system_prompt:
+        body["messages"].insert(0, {"role": "system", "content": system_prompt})
+    return body
+
+
+def _build(prompt: str, stage: str, model: str, user_request: str = "") -> dict:
+    user = {"role": "user", "content": user_request or "Please help with my task."}
     if stage == "input":
         try:
             msgs = json.loads(prompt)
@@ -42,16 +51,17 @@ def build_request(prompt: str, stage: str, model: str) -> dict:
                                                  "parameters": {"type": "object", "properties": {}}}}
         return {"model": model, "messages": [user], "tools": [tool]}
     if stage == "output":
-        return {"model": "mock-echo", "messages": [{"role": "system", "content": f"MOCK_OUTPUT: {prompt}"}, user]}
+        return {"model": "mock-echo", "messages": [user, {"role": "assistant", "content": f"MOCK_OUTPUT: {prompt}"}]}
     if stage == "tool_call":
-        return {"model": "mock-echo", "messages": [{"role": "system", "content": f"MOCK_TOOL_CALL: {prompt}"}, user]}
+        return {"model": "mock-echo", "messages": [user, {"role": "assistant", "content": f"MOCK_TOOL_CALL: {prompt}"}]}
     raise ValueError(f"unknown stage {stage!r}")
 
 
 def call_api(prompt, options, context):
     cfg = options.get("config", {})
-    stage = (context.get("vars") or {}).get("stage", "input")
-    body = build_request(prompt, stage, cfg.get("model", "mock-echo"))
+    v = context.get("vars") or {}
+    stage = v.get("stage", "input")
+    body = build_request(prompt, stage, cfg.get("model", "mock-echo"), v.get("system_prompt", ""), v.get("user_request", ""))
     if cfg.get("guardrails"):
         body["guardrails"] = cfg["guardrails"]
     if cfg.get("max_tokens"):

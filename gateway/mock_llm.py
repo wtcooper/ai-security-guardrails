@@ -1,10 +1,11 @@
 """`mock-echo`: a deterministic model for guardrail-isolation evals (no Ollama needed).
 
-It replies with whatever the SYSTEM message dictates, so the post_call guardrail can be
-tested on a chosen output or tool call while the user turn stays benign:
+It replies with whatever a trailing ASSISTANT message dictates, so the post_call guardrail can
+be tested on a chosen output or tool call. The directive is not a system message, so a real
+system prompt can accompany it (context questions read the system prompt):
 
-    system: "MOCK_OUTPUT: <assistant text>"
-    system: 'MOCK_TOOL_CALL: {"name": "run_shell", "arguments": {...}}'
+    assistant: "MOCK_OUTPUT: <assistant text>"
+    assistant: 'MOCK_TOOL_CALL: {"name": "run_shell", "arguments": {...}}'
     (no directive) -> "OK."
 """
 
@@ -15,8 +16,8 @@ from litellm import CustomLLM
 
 
 def _directive(messages: list) -> tuple[str, str]:
-    for m in messages:
-        c = m.get("content") if m.get("role") == "system" else None
+    for m in reversed(messages):
+        c = m.get("content") if m.get("role") == "assistant" else None
         if isinstance(c, str):
             for key in ("MOCK_OUTPUT:", "MOCK_TOOL_CALL:"):
                 if c.startswith(key):
