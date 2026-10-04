@@ -9,3 +9,5 @@ evals/promptfoo/redteam.generated.yaml
 evals/benchmark/.cache/
 evals/benchmark/data/
 evals/benchmark/models/
+evals/showdown/.cache/
+evals/showdown/data/

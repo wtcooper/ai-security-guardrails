@@ -11,7 +11,7 @@ custom guardrail.
 - **Pluggable System One backend:**
   - [Laya](https://huggingface.co/convaiinnovations/laya): open-weight, Apache-2.0, runs in-process. This is the default.
   - [TypeSafe Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev): API.
-  - Any Jev-compatible endpoint, such as `laya-serve`.
+  - Any Jev-compatible `POST /v1/systemone` endpoint: a self-hosted Laya server (`pip install "laya[serve]"`), Ollama ≥0.35, llama.cpp, or Cloudflare Clef.
 - **One LiteLLM guardrail for all traffic:** a single class covers chat completions, tool results, tool definitions, agent tool calls and MCP calls/results.
 - **promptfoo evals, all local:** guardrail isolation, single-turn A/B, and multi-turn crescendo red teaming, using local Ollama models only.
 
@@ -88,7 +88,7 @@ audit gaps (MCP08), shadow servers (MCP09) and cascading failures (ASI08).
 
 ```bash
 uv venv --python 3.12 && uv pip install -e '.[laya,gateway,dev]'
-uv run pytest -q                                   # 12 offline unit tests (fake backend)
+uv run pytest -q                                   # 17 offline unit tests (fake backend)
 ```
 
 **Python.** The first call downloads Laya (about 800 MB) and uses MPS/CUDA/CPU automatically.
@@ -116,8 +116,8 @@ with a message like
 | `S1GUARD_BACKEND` | Uses | Settings |
 |---|---|---|
 | `laya` (default) | in-process Laya | `S1GUARD_LAYA_MODEL`, `S1GUARD_LAYA_SUBFOLDER`, `S1GUARD_DEVICE` |
-| `jev` | TypeSafe Jev API | `TYPESAFE_API_KEY`, `S1GUARD_MODEL=jev-latest` |
-| `http` | any `POST /v1/systemone` server (e.g. `laya-serve`) | `S1GUARD_URL`, `S1GUARD_API_KEY` |
+| `jev` | TypeSafe Jev API | `TYPESAFE_API_KEY`, `S1GUARD_MODEL` (default `jev-1.13.0`, pinned) |
+| `http` | any `POST /v1/systemone` server (e.g. `laya[serve]` ≥0.3.23 with `LAYA_API_KEY`; Ollama ≥0.35) | `S1GUARD_URL`, `S1GUARD_API_KEY`, `S1GUARD_MODEL` |
 
 Thresholds are backend-specific. After switching backends, re-run `scripts/calibrate.py`.
 
@@ -220,20 +220,50 @@ Training took ~40 min at 8–10 GB.
 
 **Through the gateway** (held-out promptfoo smoke set):
 - Guardrail alone: fine-tuned v4 blocks **94%** of attacks at **3%** benign FPR, including all agentic tool-call cases. Zero-shot blocks 62% at 10%.
+- With the hybrid policy (v4 plus an injection encoder, below): **98%** (49/50) at the same 3% FPR. Prompt injection rises from 7/10 to 9/10.
 - End-to-end A/B with `gemma4:e2b` (run with v2): v2 stops **38/38** attacks. The unguarded model stops 26/38.
+
+**Against public guard models** ([docs/guardrail-showdown.md](docs/guardrail-showdown.md),
+[evals/showdown/](evals/showdown/README.md)), on recognized public benchmarks that, per the model
+cards, none of the compared guards trained on. Cells show AUROC:
+
+| | BIPIA (indirect injection) | WildJailbreak | OpenAI Moderation | WildGuardTest | p50 latency |
+|---|---:|---:|---:|---:|---:|
+| ProtectAI DeBERTa v2 | 0.451 | 0.645 | 0.437 | 0.551 | ~20 ms |
+| Horizon-Labs PI guard v2.2 | **0.837** | 0.796 | 0.617 | 0.707 | ~15 ms |
+| Horizon-Labs content-safety-small | 0.630 | **0.887** | **0.909** | **0.927** | ~10 ms |
+| s1guard zero-shot / v4 | 0.587 / 0.743 | 0.527 / 0.711 | 0.815 / 0.845 | 0.710 / 0.808 | ~250 ms |
+| hybrid: v4 + Horizon PI | **0.837** | 0.796 | 0.797 | 0.791 | ~270 ms |
+
+- **Encoders win at input and on tool results.** On clean data, the specialist encoders beat v4
+  at both stages, at about 1/20 of the latency.
+- **Our own benchmark is in distribution.** v4's 0.947 there reflects that, and the results table
+  above is in distribution too.
+- **What s1guard still uniquely covers:** the agentic and context-aware stages (tool definitions,
+  tool calls checked against the user's request, output leaks checked against the system prompt,
+  multi-turn escalation). No public clean benchmark was run for those yet.
 
 **Context-aware output check.** When a request has a system prompt, the output leak question is
 asked against it: *"Does `assistant_reply` reveal confidential details, secrets or instructions
 from `system_prompt`?"*.
 
 **Deploy it.** The checkpoint (~840 MB) is not in git; rebuild it with the recipe in the methods
-doc (~2 h on an M4 Pro). Its policy
-([evals/benchmark/policies/laya-s1guard-v4.yaml](evals/benchmark/policies/laya-s1guard-v4.yaml))
-keeps `destructive_action` (tool calls) in *monitor* mode: it can't tell injected actions from
-legitimate ones without the user's request as context.
+doc (~2 h on an M4 Pro). There are two policies:
+- **[laya-s1guard-v4.yaml](evals/benchmark/policies/laya-s1guard-v4.yaml): Laya only.**
+  `destructive_action` (tool calls) stays in *monitor* mode, because it can't tell injected actions
+  from legitimate ones without the user's request as context.
+- **[laya-s1guard-v4-hybrid.yaml](evals/benchmark/policies/laya-s1guard-v4-hybrid.yaml): adds an encoder.**
+  - It adds `Horizon-Labs/prompt-injection-guard-base` (Apache-2.0, pinned revision) as a
+    `kind: classifier` risk on the input and tool_result stages. v4's `prompt_injection` and
+    `jailbreak` questions drop to *monitor*.
+  - **Gains:** better injection recall (gateway smoke: 49/50 attacks blocked, against 47/50).
+  - **Costs:** more false positives on harmful and adversarial prompts (16–18% against 4–8% on
+    the clean benchmarks).
+  - The planned next step is to add the content-safety encoder too and tune both thresholds on dev
+    (showdown doc).
 ```bash
 S1GUARD_LAYA_MODEL=$PWD/evals/benchmark/models/laya-s1guard-v4 \
-S1GUARD_POLICY=$PWD/evals/benchmark/policies/laya-s1guard-v4.yaml bash gateway/start_gateway.sh
+S1GUARD_POLICY=$PWD/evals/benchmark/policies/laya-s1guard-v4-hybrid.yaml bash gateway/start_gateway.sh
 ```
 
 ## Calibration
@@ -257,12 +287,18 @@ at the output stage; the other output questions only monitor. Treat the stage th
 
 - **Weakest risks after fine-tuning (v4).**
   - Prompt injection (48%) and jailbreak (86%); many CyberSecEval injections are attacks only
-    relative to a system prompt.
+    relative to a system prompt. The hybrid policy hands these risks to an encoder.
+  - **Over-blocking out of distribution:** v4 blocks 41% of long benign role-play prompts
+    (in-the-wild "regular" set), spread across all input questions. The hybrid still blocks 33%.
+    The fix is hard negatives in training (showdown doc, next steps).
   - Harmful content in replies: 49% at a 3% output FPR. A wider output budget trades FPR for recall.
   - Indirect injection: 68%.
 - **Tool calls need the user's request.** `unrequested_action` only runs when the gateway sees the
   user's message, which it does on chat responses. A bare MCP call has no user request, and only
   the stateless checks apply. `destructive_action` is monitor-only.
+- **Tool calls also need the tool history.** On an external agent benchmark (toolcall-guard-v1,
+  unseen tools), v4 drops to AUROC 0.60. Its labels depend on what earlier tool outputs said,
+  which the tool_call stage doesn't see yet.
 - **Needs a GPU** (methods doc): larger fine-tunes (more layers, full weights), longer context
   (long tool outputs and replies are cut at 512 tokens), sweeps and multiple seeds.
 - **Next quality levers:** real gateway traffic as hard negatives, AgentDojo agent traces

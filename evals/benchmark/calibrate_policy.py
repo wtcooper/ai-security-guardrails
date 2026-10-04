@@ -50,8 +50,8 @@ def calibrated_thresholds(tag, stage_fpr=0.04, policy=None):
         if (~attack).sum() < 20 or attack.sum() < 5:
             continue
         # a row without a question's score (context-only question, context absent) = it didn't fire
-        qs = {r.id: r for r in risks if r.kind == "question" and stage in r.stages and r.action == "block"
-              and any(r.id in scores[x["id"]] for x in rows)}
+        qs = {r.id: r for r in risks if r.kind in ("question", "classifier") and stage in r.stages
+              and r.action == "block" and any(r.id in scores[x["id"]] for x in rows)}
         S = {q: np.array([scores[x["id"]].get(q, 0.0) for x in rows]) for q in qs}
         det = np.array([any(v >= 0.5 for k, v in scores[x["id"]].items() if k in block_detectors) for x in rows])
 

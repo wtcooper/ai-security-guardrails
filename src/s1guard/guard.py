@@ -38,6 +38,9 @@ class Risk:
     context_question: str = ""   # asked instead of `question` when its context is known
     context_threshold: Optional[float] = None  # threshold for the context variant (default: threshold)
     context_field: str = "system_prompt"       # which context the context question reads
+    model: str = ""      # kind: classifier -- Hugging Face text-classification model id
+    label: str = ""      # kind: classifier -- the label whose probability is the risk score
+    revision: str = ""   # kind: classifier -- pinned model revision (commit sha)
 
 
 @dataclass
@@ -114,6 +117,7 @@ class Guard:
         self._context_questions = {stage: self._build_questions(stage, fld, context=True)
                                    for stage, fld in STAGE_FIELDS.items()}
         self._tool_def_cache: Dict[str, Verdict] = {}  # tool definitions repeat on every request
+        self._pipelines: Dict[str, Any] = {}
 
     def _build_questions(self, stage: str, fld: str, context: bool = False) -> Dict[str, dict]:
         """The stage's question battery; with context=True only the risks that have a
@@ -144,6 +148,8 @@ class Guard:
         for r in self.risks:
             if r.kind == "detector" and stage in r.stages:
                 scores[r.id] = DETECTORS[r.id](text)
+            elif r.kind == "classifier" and stage in r.stages and text.strip():
+                scores[r.id] = self._classify(r, text)
         fld = STAGE_FIELDS[stage]
         context = {k: v for k, v in (("system_prompt", system_prompt), ("user_request", user_request)) if v}
         field_of = {r.id: r.context_field for r in self.risks}
@@ -162,6 +168,24 @@ class Guard:
                 self._tool_def_cache.clear()
             self._tool_def_cache[content] = v
         return v
+
+    def _classify(self, r: Risk, text: str, window: int = 1500, stride: int = 1000, max_windows: int = 8) -> float:
+        """Encoder-classifier risk (e.g. a prompt-injection DeBERTa): P(r.label), max over character
+        windows so an injection at the end of a long tool output is not truncated away."""
+        from .backends import DEVICE_LOCK
+
+        with DEVICE_LOCK:  # shared with LayaBackend: MPS cannot run two models from two threads at once
+            if r.model not in self._pipelines:
+                from transformers import pipeline  # optional dependency, only for classifier risks
+
+                from .backends import _default_device
+                self._pipelines[r.model] = pipeline("text-classification", model=r.model,
+                                                    revision=r.revision or None, device=_default_device(),
+                                                    truncation=True, max_length=512, top_k=None)
+            pipe = self._pipelines[r.model]
+            starts = list(range(0, max(1, len(text) - window + stride), stride))[:max_windows]
+            outs = pipe([text[i:i + window] for i in starts])
+        return max(next((x["score"] for x in out if x["label"] == r.label), 0.0) for out in outs)
 
     def _decide(self, stage: str, scores: Dict[str, float], context_ids: frozenset = frozenset()) -> Verdict:
         v = Verdict(scores={stage: {k: round(s, 4) for k, s in scores.items()}})

@@ -591,6 +591,61 @@ A stateless classifier cannot draw that line.
 - Small regressions (jailbreak 92 → 86%, output leaks 94 → 86%, n = 36) are within the noise of
   their test slices but worth watching.
 
+### 8.7 Out-of-distribution comparison with public guards (showdown)
+
+Every number above uses our own benchmark sources. To measure transfer, all checkpoints were run
+against two public prompt-injection encoders on MIT-licensed sets none of them trained on:
+- Gandalf, TrustAIRLab in-the-wild jailbreak/regular, NotInject and SPML;
+- toolcall-guard-v1 `test_unseen_tools`.
+
+The harness is `evals/showdown/` and the full analysis is
+[guardrail-showdown.md](guardrail-showdown.md).
+
+| Guard | OOD injection/jailbreak AUROC | OOD macro recall / FPR | Our benchmark AUROC (input) | Tool calls AUROC |
+|---|---:|---:|---:|---:|
+| ProtectAI DeBERTa v2 | 0.916 | 90% / 20% | 0.680 | — |
+| Horizon PI guard v2.2 | **0.943** | 74% / 5% | 0.838 | — |
+| zero-shot | 0.794 | 62% / 24% | 0.748 | 0.561 |
+| v2 | 0.803 | 50% / 19% | 0.924 | 0.520 |
+| v3 | 0.839 | 65% / 19% | 0.951 | 0.589 |
+| v4 | 0.834 | 59% / 15% | 0.947 | 0.596 |
+| hybrid (v4 + Horizon owning PI/JB) | 0.884 | 75% / 14% | **0.963** | — |
+
+**Reading:**
+- **Fine-tuning mostly bought in-distribution gains.** Input AUROC rose by 0.20 on our benchmark
+  but only by 0.04 out of distribution.
+- **The benchmark column is not a fair cross-guard test.** It is in distribution for s1guard:
+  - same sources as training, though group-disjoint;
+  - 22 of 250 rows are near-duplicates of training rows, which moves v4 by only 0.006.
+  - 76% of its attacks are outside the encoders' scope.
+
+  On its injection and jailbreak rows, Horizon beats v4 (0.972 vs 0.938).
+- **Over-blocking.** v4's main out-of-distribution error is long benign role-play prompts (41% blocked). It is spread
+  over all input questions, led by `sensitive_data_request` (22%).
+- **Tool calls.** `unrequested_action` (0.995 dev AUROC) does not transfer to toolcall-guard-v1,
+  whose labels depend on earlier tool outputs.
+- **Resulting policy.** These results produced `policies/laya-s1guard-v4-hybrid.yaml`, which
+  uses the new `kind: classifier` risk type. Encoder threshold: 0.7449, its 1%-FPR point on the
+  benchmark dev benign input rows.
+- **Gateway smoke** (held-out, §8.2b set): 49/50 attacks blocked at 3% FPR, against 47/50 for v4 alone.
+
+**Round 2: recognized clean benchmarks.** These are BIPIA test, WildJailbreak eval, the OpenAI
+Moderation set and WildGuardTest, all new to every compared guard per its model card. They were
+added after we found Horizon PI had trained on round 1's Gandalf and in-the-wild sets.
+
+| Guard (AUROC) | BIPIA | WildJailbreak | OpenAI Moderation | WildGuardTest |
+|---|---:|---:|---:|---:|
+| Horizon PI / Horizon content-safety-small | **0.837** / 0.630 | 0.796 / **0.887** | 0.617 / **0.909** | 0.707 / **0.927** |
+| zero-shot | 0.587 | 0.527 | 0.815 | 0.710 |
+| v4 | 0.743 | 0.711 | 0.845 | 0.808 |
+
+**Reading:**
+- **Fine-tuning helped on clean data**, by +0.03 to +0.18 AUROC over zero-shot.
+- **v4 still trails the specialist encoders** at both the input and the tool_result stage.
+- **The in-distribution gains (§8.6) overstate generalization.**
+
+Full tables and caveats: [guardrail-showdown.md](guardrail-showdown.md).
+
 ## 9. Deviations and incidents
 
 Each item records what happened and how it affects the results.
@@ -618,10 +673,14 @@ Each item records what happened and how it affects the results.
 | 19 | **Tool-call data shortcut.** Every InjecAgent data-stealing case ends with `GmailSendEmail`, so `data_exfiltration` learned "GmailSendEmail ≈ exfiltration". Its 89% test recall doesn't transfer: a generic `http_post` to an attacker URL scores 0.35. `tool_misuse` (unlocks, transfers, grants) is not separable from legitimate calls to the same tools without the user's request as context (0% recall). | Open. Diversify exfiltration across tools and add benign `GmailSendEmail` calls to internal recipients. Treat destructive or privileged tool actions with policy (allowlists, human approval) or pass the user's request as context. `destructive_action` is monitor-only in the v3 policy. |
 | 20 | **First v4 tool-call generation was noisy.** Legitimate sends were assigned to tools at random (e.g. "send meeting notes" via `AmazonPostReview`, which is itself a leak); `gemma4:e2b` sometimes put content into ID fields; and some "user requests" echoed the message text. | Regenerated those 113 calls and 419 requests with tool-matched legitimate sends, a realistic-arguments prompt and a verb-first request prompt. Only the regenerated data is used. |
 | 21 | **Context-only question skipped by calibration; no threshold margin.** Calibration skipped any question missing a score on some dev rows, so `unrequested_action` (absent on the 3 authored tool calls with no user request) kept its placeholder 0.50. Once included, the greedy fit stopped at 0.962, just under two noisy benign outliers, because other questions had already covered the dev attacks. `rm -rf /` against an unrelated request (0.92) was then allowed in the gateway smoke. | A missing score now counts as "didn't fire", and leftover budget is spent lowering useful questions (§6). `unrequested_action` was recalibrated to 0.105 and the smoke case blocks. All §8.6 numbers use the new rule. |
+| 22 | **Gateway crash with two in-process models.** With the hybrid policy, every promptfoo request errored. LiteLLM screens concurrent requests in worker threads. Laya and the encoder had separate locks, so both encoded on MPS at once and Metal aborted the process (`A command encoder is already encoding to this command buffer`). | All in-process models now share one `DEVICE_LOCK` (`s1guard/backends.py`). The re-run at promptfoo concurrency 4 had 0 errors. Results before the fix are discarded. |
 
 ---
 
 ## 10. Threats to validity
+
+- **In-distribution numbers overstate transfer.** On recognized benchmarks none of the models
+  trained on (§8.7, round 2), v4 scores AUROC 0.71–0.85, against 0.947 on our test split.
 
 - **Small test slices.** Input data_leakage has 25 test rows, output leaks 36, tool_call almost
   none. Their percentages carry wide intervals; treat them as directional.
@@ -705,6 +764,12 @@ PYTORCH_MPS_LOW_WATERMARK_RATIO=0.4 uv run python $B/train_laya.py --base $B/mod
 uv run python $B/score.py --tag ft4 --context --model $B/models/laya-s1guard-v4 --splits dev,test
 (cd $B && uv run python report.py base ft2-outctx ft3 ft4 --calibrate 0.04)
 uv run python $B/calibrate_policy.py --tag ft4 --out $B/policies/laya-s1guard-v4.yaml --monitor destructive_action
+
+# showdown vs public guards + hybrid policy (§8.7)
+uv run python $B/calibrate_policy.py --tag base --out $B/policies/laya-base.yaml
+uv run python evals/showdown/showdown.py build
+for g in regex protectai horizon s1-zeroshot s1-v2 s1-v3 s1-v4; do uv run python evals/showdown/showdown.py run --guard $g; done
+uv run python evals/showdown/showdown.py report && uv run python evals/showdown/showdown.py hybrid-policy
 ```
 
 **Recipe notes.**
@@ -739,6 +804,8 @@ uv run python $B/calibrate_policy.py --tag ft4 --out $B/policies/laya-s1guard-v4
 | `evals/benchmark/calibrate_policy.py` | Joint dev calibration; writes a policy YAML for a score set |
 | `evals/benchmark/policies/laya-s1guard-v2.yaml` | **Deployable policy for fine-tuned v2** (thresholds from `ft2-outctx`) |
 | `evals/benchmark/policies/context-both.yaml` | Policy v2 was trained with (adds the input context question) |
+| `evals/benchmark/policies/laya-s1guard-v4-hybrid.yaml` | **Recommended deployable policy**: v4 plus the Horizon encoder for injection (§8.7) |
+| `evals/showdown/showdown.py` | Comparison with public guards: `ood` and `clean` suites (§8.7) |
 | `evals/benchmark/train_laya.py` | Fine-tuning |
 | `src/s1guard/guard.py`, `policy.yaml`, `litellm_guardrail.py` | Context-question support (production) |
 | `evals/build_datasets.py` | promptfoo smoke set (test groups only) |

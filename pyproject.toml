@@ -12,9 +12,12 @@ dependencies = [
 
 [project.optional-dependencies]
 # In-process open-weight backend (convaiinnovations/laya, Apache-2.0)
-laya = ["laya>=0.3.22"]
+# exact pin: thresholds and benchmark results were produced with this version; re-run
+# evals/benchmark (score + calibrate) before changing it
+laya = ["laya==0.3.22"]
 # LiteLLM gateway integration (custom guardrail)
-gateway = ["litellm[proxy]>=1.88"]
+# >=1.102: streaming post_call guardrails via apply_guardrail
+gateway = ["litellm[proxy]>=1.102"]
 dev = ["pytest>=8"]
 
 [project.scripts]
