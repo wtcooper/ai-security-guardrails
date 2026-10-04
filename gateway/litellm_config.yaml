@@ -15,7 +15,7 @@ model_list:
   - model_name: qwen3.5
     litellm_params: {model: ollama/qwen3.5, api_base: http://localhost:11434, timeout: 600, num_ctx: 16384, think: false}
 
-  # Deterministic mock for guardrail-isolation evals: replies per the system-message
+  # Deterministic mock for guardrail-isolation evals: replies per the trailing assistant-message
   # directive (MOCK_OUTPUT: / MOCK_TOOL_CALL:), see gateway/mock_llm.py.
   - model_name: mock-echo
     litellm_params: {model: mock-echo/echo}
@@ -30,6 +30,21 @@ guardrails:
       guardrail: s1guard.litellm_guardrail.S1Guardrail
       mode: [pre_call, post_call, pre_mcp_call, post_mcp_call]
       default_on: false
+  # Any guardlab registry guard (src/guardlab/guards.yaml) via one generic guardrail class.
+  - guardrail_name: judge-luna
+    litellm_params:
+      guardrail: guardlab.litellm_guardrail.LabGuardrail
+      mode: [pre_call, post_call, pre_mcp_call, post_mcp_call]
+      default_on: false
+      guard_id: judge-luna
+      on_unavailable: block
+  - guardrail_name: dec-luna-emu
+    litellm_params:
+      guardrail: guardlab.litellm_guardrail.LabGuardrail
+      mode: [pre_call, post_call, pre_mcp_call, post_mcp_call]
+      default_on: false
+      guard_id: dec-luna-emu
+      on_unavailable: block
 
 general_settings:
   master_key: sk-local

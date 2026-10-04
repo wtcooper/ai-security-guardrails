@@ -17,6 +17,7 @@ control directly and llm-rubric judges see "[BLOCKED ...]" for a blocked turn.
 
 import json
 import os
+import re
 
 import httpx
 
@@ -76,9 +77,11 @@ def call_api(prompt, options, context):
         return {"output": text, "guardrails": {"flagged": False}, "metadata": {"httpStatus": 200, "stage": stage}}
     detail = r.json().get("error", {}) if r.headers.get("content-type", "").startswith("application/json") else {}
     message = str(detail.get("message", r.text))
-    if r.status_code == 400 and "s1guard" in message:
+    m = re.search(r"Blocked by (\S+) \((request|response)\)", message)
+    if r.status_code == 400 and m:   # any guardrail that names itself: s1guard or a guardlab LabGuardrail
         return {"output": f"[BLOCKED] {message}",
-                "guardrails": {"flagged": True, "flaggedInput": "(request)" in message,
-                               "flaggedOutput": "(response)" in message, "reason": message},
-                "metadata": {"httpStatus": 400, "stage": stage}}
+                "guardrails": {"flagged": True, "flaggedInput": m.group(2) == "request",
+                               "flaggedOutput": m.group(2) == "response", "reason": message},
+                "metadata": {"httpStatus": 400, "stage": stage, "blocked_by": m.group(1),
+                             "unavailable": "unavailable (" in message}}
     return {"error": f"HTTP {r.status_code}: {message[:500]}"}

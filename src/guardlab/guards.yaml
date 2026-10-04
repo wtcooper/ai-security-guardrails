@@ -1,0 +1,191 @@
+# Guard registry. Each id names an adapter (see registry.ADAPTERS) plus its config.
+# Documentation fields: family, license, trained_on (eval sets the guard has seen; the report
+# excludes those rows for it), notes.
+guards:
+  # ------------------------------------------------------------------ floor
+  regex:
+    adapter: regex
+    family: baseline
+    license: n/a
+    notes: keyword patterns ("ignore previous instructions", DAN, system prompt, ...)
+
+  # ------------------------------------------------------------------ family 1: fine-tuned decision models
+  s1-zeroshot:
+    adapter: s1guard
+    family: decision-model (zero-shot)
+    license: Apache-2.0
+    model: convaiinnovations/laya
+    policy: ${REPO}/experiments/s1guard_finetune/policies/laya-base.yaml
+  s1-v4:
+    adapter: s1guard
+    family: decision-model (fine-tuned)
+    license: Apache-2.0 base; our checkpoint (not in git)
+    model: ${REPO}/experiments/s1guard_finetune/models/laya-s1guard-v4
+    policy: ${REPO}/experiments/s1guard_finetune/policies/laya-s1guard-v4.yaml
+    trained_on: [s1guard_train]
+
+  # ------------------------------------------------------------------ family 2: LLM-as-a-judge
+  # Policies: src/guardlab/judge/policies/*.md (versioned); tuning log: docs/judge.md.
+  judge-luna:
+    adapter: llm_judge
+    family: llm-judge
+    license: OpenAI API
+    model: gpt-6-luna
+    price: {input: 0.10, cached_input: 0.01, output: 0.50}   # $/1M tokens, OpenAI pricing page 2026-10-04
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    mode: two_stage        # stage 1 digit (no reasoning); stage 2 (low reasoning) decides digits in review_band
+    review_band: [4, 6]    # >= 7 blocks, <= 3 allows without review (tuning round 3)
+    effort: none
+    stage2_effort: low
+    max_tokens: 8
+  judge-luna-single:
+    adapter: llm_judge
+    family: llm-judge
+    license: OpenAI API
+    model: gpt-6-luna
+    price: {input: 0.10, cached_input: 0.01, output: 0.50}   # $/1M tokens, OpenAI pricing page 2026-10-04
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    mode: single           # stage 1 only: one digit per policy, block at >= block_at
+    effort: none
+    max_tokens: 8
+  judge-luna-think:        # round-5 experiment: stage 1 with low reasoning, single stage
+    adapter: llm_judge
+    family: llm-judge
+    license: OpenAI API
+    model: gpt-6-luna
+    price: {input: 0.10, cached_input: 0.01, output: 0.50}
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    mode: single
+    effort: low
+    max_tokens: 512
+  judge-luna-combined:     # round-5 experiment: one call per stage (input: injection + harmful together)
+    adapter: llm_judge
+    family: llm-judge
+    license: OpenAI API
+    model: gpt-6-luna
+    price: {input: 0.10, cached_input: 0.01, output: 0.50}
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    mode: two_stage
+    review_band: [4, 6]
+    combine: true
+    effort: none
+    stage2_effort: low
+    max_tokens: 8
+  judge-flash-lite:        # smoke tests only, after luna's policies are frozen
+    adapter: llm_judge
+    family: llm-judge
+    license: Gemini API
+    model: gemini-3.5-flash-lite
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai
+    api_key_env: GEMINI_API_KEY
+    mode: two_stage
+    review_band: [4, 6]    # same frozen configuration as judge-luna
+    effort: ""             # Gemini's OpenAI endpoint rejects reasoning_effort "none"; default answers a bare digit
+    stage2_effort: ""
+    max_tokens: 8
+
+  # ------------------------------------------------------------------ family 4: provider decision APIs
+  # s1guard's question battery (one yes/no question per risk) answered by a hosted decision model.
+  dec-openai:              # real OpenAI Decisions API: returns `unavailable` until preview access is enabled
+    adapter: decision_api
+    family: decision-api
+    license: OpenAI API (preview)
+    api: openai
+    model: gpt-6-luna
+    api_key_env: OPENAI_API_KEY
+    policy: ${REPO}/src/guardlab/decisions/policies/decisions.yaml
+  dec-luna-emu:            # same schema via the local emulator (python -m guardlab.decisions.mock_server)
+    adapter: decision_api
+    family: decision-api (emulated)
+    license: OpenAI API
+    api: openai
+    base_url: http://127.0.0.1:8765
+    model: gpt-6-luna
+    policy: ${REPO}/src/guardlab/decisions/policies/decisions.yaml
+
+  # ------------------------------------------------------------------ family 3: open-source classifiers
+  # Gated on Hugging Face: accept the model's licence, then set HF_TOKEN in .env.
+  pg2-86m:
+    adapter: hf_classifier
+    family: oss-classifier
+    license: Llama 4 Community (gated)
+    model: meta-llama/Llama-Prompt-Guard-2-86M
+    revision: a8ded8e697ce
+    label: LABEL_1          # pinned revision has no id2label: LABEL_1 = malicious (verified)
+    stages: [input, tool_result, tool_definition]
+  pg2-22m:
+    adapter: hf_classifier
+    family: oss-classifier
+    license: Llama 4 Community (gated)
+    model: meta-llama/Llama-Prompt-Guard-2-22M
+    revision: 11614a155199
+    label: LABEL_1          # pinned revision has no id2label: LABEL_1 = malicious (verified)
+    stages: [input, tool_result, tool_definition]
+  sentinel-v2:
+    adapter: hf_classifier
+    family: oss-classifier
+    license: Elastic (source-available; gated)
+    model: rogue-security/prompt-injection-jailbreak-sentinel-v2
+    revision: 05ff9bfd1f28
+    label: jailbreak
+    stages: [input, tool_result, tool_definition]
+  qwen3guard-0.6b:
+    adapter: hf_generative
+    family: oss-classifier
+    license: Apache-2.0
+    model: Qwen/Qwen3Guard-Gen-0.6B
+    revision: fada3b2f655b89601929198343c94cd2f64d93cc
+    template: qwen3guard
+    notes: P(Unsafe)+P(Controversial) after "Safety:" (strict); jailbreak is an input category; no indirect-injection category
+  qwen3guard-4b:
+    adapter: hf_generative
+    family: oss-classifier
+    license: Apache-2.0
+    model: Qwen/Qwen3Guard-Gen-4B
+    revision: 6ec42827da0c1ff11e7a49dc269d2e810d27e108
+    template: qwen3guard
+  shieldstral-3b:
+    adapter: hf_generative
+    family: oss-classifier
+    license: Apache-2.0
+    model: mistralai/Shieldstral-1.0-3B
+    revision: 003ec7e2b0bab5f0e6307edbaf186fa5822b76f5
+    template: shieldstral
+    notes: one yes/no policy question per risk (our wording, adapters/hf_generative.py SHIELD_QUESTIONS)
+  granite-guardian-8b:
+    adapter: ollama_guardian
+    family: oss-classifier
+    license: Apache-2.0
+    model: granite4.1-guardian:8b
+    notes: Ollama q6_K; built-in criteria jailbreak + harm on input, custom criteria elsewhere; binary verdicts
+  safeguard-20b:
+    adapter: llm_judge
+    family: oss-classifier (policy-following reasoning model)
+    license: Apache-2.0
+    model: gpt-oss-safeguard:20b
+    base_url: http://localhost:11434/v1
+    api_key_env: OLLAMA_API_KEY
+    mode: single
+    effort: low
+    max_tokens: 1024
+    notes: Ollama MXFP4; same policies as judge-luna (src/guardlab/judge/policies), so this isolates the model
+  nemotron-cs-4b:
+    adapter: policy_shim
+    family: oss-classifier (policy-following)
+    license: NVIDIA OpenMDW-1.1 + Gemma terms
+    base_url: http://127.0.0.1:8766
+    notes: >-
+      Nemotron-3.5-Content-Safety (rev 35645ed3543b) in custom-policy mode with judge-luna's cyber policies;
+      runs in .venv-nemotron behind evals/lab/shims/nemotron_server.py (start it first)
+  llama-guard4-12b:
+    adapter: llamaguard_server
+    family: oss-classifier
+    license: Llama 4 Community (gated)
+    base_url: http://127.0.0.1:8767
+    notes: >-
+      meta-llama/Llama-Guard-4-12B (rev 87acb4b94e93) quantized to Q4_K_M with llama.cpp and served by
+      llama-server (bash evals/lab/shims/llama_guard4.sh setup|serve); hazard categories only (no injection)

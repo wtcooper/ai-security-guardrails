@@ -1,0 +1,43 @@
+# Guard-only comparison: every guard sees the same standardized corpus; the guard's own
+# block/pass decision is scored with `guardrails` / `not-guardrails` (no model, no judge).
+#
+#   uv run python evals/lab/build_corpus.py          # -> data/pf/lab_tests.json
+#   bash evals/run.sh lab smoke-dev 'regex|s1-v4'    # modes: smoke-dev | smoke-test | dev | test
+description: "guardrail lab: guard-only comparison on the standardized corpus"
+
+env:
+  PROMPTFOO_DISABLE_TELEMETRY: "true"
+  PROMPTFOO_DISABLE_REMOTE_GENERATION: "true"
+
+evaluateOptions:
+  cache: false          # guardlab caches per guard version itself
+  maxConcurrency: 4
+
+prompts: ["{{case_id}}"]  # the provider reads vars directly; corpus text is never templated
+
+# One provider per registry guard (src/guardlab/guards.yaml); label = guard id.
+# Select guards per run: bash evals/run.sh lab <mode> '<label regex>'
+# Local-model guards use `workers: 1` (one model copy in memory); API guards scale with -j.
+providers:
+  - {id: file://provider_guard.py, label: regex, config: {guard: regex}}
+  - {id: file://provider_guard.py, label: s1-zeroshot, config: {guard: s1-zeroshot, workers: 1}}
+  - {id: file://provider_guard.py, label: s1-v4, config: {guard: s1-v4, workers: 1}}
+  - {id: file://provider_guard.py, label: judge-luna, config: {guard: judge-luna}}
+  - {id: file://provider_guard.py, label: judge-luna-single, config: {guard: judge-luna-single}}
+  - {id: file://provider_guard.py, label: judge-luna-think, config: {guard: judge-luna-think}}
+  - {id: file://provider_guard.py, label: judge-luna-combined, config: {guard: judge-luna-combined}}
+  - {id: file://provider_guard.py, label: judge-flash-lite, config: {guard: judge-flash-lite}}
+  - {id: file://provider_guard.py, label: dec-openai, config: {guard: dec-openai}}
+  - {id: file://provider_guard.py, label: dec-luna-emu, config: {guard: dec-luna-emu}}
+  - {id: file://provider_guard.py, label: pg2-86m, config: {guard: pg2-86m, workers: 1}}
+  - {id: file://provider_guard.py, label: pg2-22m, config: {guard: pg2-22m, workers: 1}}
+  - {id: file://provider_guard.py, label: sentinel-v2, config: {guard: sentinel-v2, workers: 1}}
+  - {id: file://provider_guard.py, label: qwen3guard-0.6b, config: {guard: qwen3guard-0.6b, workers: 1}}
+  - {id: file://provider_guard.py, label: qwen3guard-4b, config: {guard: qwen3guard-4b, workers: 1}}
+  - {id: file://provider_guard.py, label: shieldstral-3b, config: {guard: shieldstral-3b, workers: 1}}
+  - {id: file://provider_guard.py, label: granite-guardian-8b, config: {guard: granite-guardian-8b, workers: 1}}
+  - {id: file://provider_guard.py, label: safeguard-20b, config: {guard: safeguard-20b, workers: 1}}
+  - {id: file://provider_guard.py, label: nemotron-cs-4b, config: {guard: nemotron-cs-4b, workers: 1}}
+  - {id: file://provider_guard.py, label: llama-guard4-12b, config: {guard: llama-guard4-12b, workers: 1}}
+
+tests: file://data/pf/lab_tests.json

@@ -27,7 +27,7 @@
 # Thresholds were calibrated for the zero-shot `laya` (English) backend: input on a dev split
 # of the ai-security-evals corpus, other stages on evals/data/dev_stages.jsonl (authored cases
 # + real gemma4:e2b replies), all disjoint from the smoke evals. Re-run
-# `python scripts/calibrate.py` after changing a question, backend or model.
+# `python experiments/s1guard_finetune/calibrate_zeroshot.py` after changing a question, backend or model.
 
 version: 1
 

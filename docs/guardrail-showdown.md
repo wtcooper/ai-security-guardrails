@@ -1,11 +1,11 @@
 # Guardrail showdown: s1guard vs public guard models
 
-**Date:** 2026-10-03. **Harness and raw tables:** [evals/showdown/](../evals/showdown/README.md)
-([results_clean.md](../evals/showdown/results_clean.md) for round 2,
-[results.md](../evals/showdown/results.md) for round 1).
+**Date:** 2026-10-03. **Harness and raw tables:** [experiments/showdown/](../experiments/showdown/README.md)
+([results_clean.md](../experiments/showdown/results_clean.md) for round 2,
+[results.md](../experiments/showdown/results.md) for round 1).
 
 This was prompted by the decision-model landscape review
-([system-one-decision-models-landscape.md](system-one-decision-models-landscape.md)). That review
+([system-one-decision-models-landscape.md](research/system-one-decision-models-landscape.md)). That review
 found two things: purpose-built encoders still match decision models on prompt injection, and our
 own numbers were all in-distribution. We ran two rounds:
 - **Round 1:** less-known MIT sets.
@@ -238,7 +238,7 @@ on this data (decider-2b LoRA) still lets 53% of unsafe actions through on ASSEB
 
 ## Decision and changes
 
-1. **Shipped `evals/benchmark/policies/laya-s1guard-v4-hybrid.yaml` after round 1.**
+1. **Shipped `experiments/s1guard_finetune/policies/laya-s1guard-v4-hybrid.yaml` after round 1.**
    - Round 2 shows it trades higher false positives on harmful-content prompts for better injection
      recall. It stays an option; it is not a clear default.
    - It adds the Horizon encoder as an `encoder_prompt_injection` risk (new `kind: classifier`, pinned

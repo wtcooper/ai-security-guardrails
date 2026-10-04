@@ -1,6 +1,6 @@
 """Build the calibration (dev) split and the promptfoo smoke split from the
 ai-security-evals corpus. The two splits are disjoint, and smoke cases are drawn only from the
-detection benchmark's TEST groups (evals/benchmark), so neither threshold calibration nor
+detection benchmark's TEST groups (experiments/s1guard_finetune), so neither threshold calibration nor
 fine-tuning has seen them.
 
     uv run python evals/build_datasets.py [--evals-repo ../ai-security-evals]
@@ -46,7 +46,7 @@ def main() -> None:
                 f.write(json.dumps({"id": m["id"], "text": c["vars"]["prompt"], "attack": m["type"] != "benign",
                                     "category": cat, "family": m.get("technique_family", "")}) + "\n")
     # Smoke cases come only from benchmark TEST groups (never seen by fine-tuning or calibration).
-    sys.path.insert(0, str(HERE / "benchmark"))
+    sys.path.insert(0, str(HERE.parent / "experiments" / "s1guard_finetune"))
     from sources import _group, split_of
 
     smoke = []

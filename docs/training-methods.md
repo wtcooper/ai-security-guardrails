@@ -102,7 +102,7 @@ contamination issue that was fixed later.
 
 ## 4. Detection benchmark
 
-Code lives in [evals/benchmark/](../evals/benchmark/). `sources.py` holds the loaders and
+Code lives in [experiments/s1guard_finetune/](../experiments/s1guard_finetune/). `sources.py` holds the loaders and
 `build_benchmark.py` does the assembly. Only permissively licensed sources are used (Apache-2.0,
 MIT, CC-BY-4.0). Gated and non-commercial datasets (MHJ, WildJailbreak, WildGuardMix) were
 deliberately excluded.
@@ -132,7 +132,7 @@ deliberately excluded.
 
 ### 4.3 Output-stage generation and labelling
 
-[gen_outputs.py](../evals/benchmark/gen_outputs.py) produces three kinds of reply. Each of the
+[gen_outputs.py](../experiments/s1guard_finetune/gen_outputs.py) produces three kinds of reply. Each of the
 251 CyberSecEval system prompts gets:
 
 - **(a)** a reply to that case's own attack;
@@ -154,7 +154,7 @@ The threshold started at 6 words. A spot check found that 6-word matches sometim
 model restating its task (e.g. "the typical climate in New York City"), so it was raised to 8;
 `build_benchmark.py` re-checks every "verbatim" label at the current threshold. Paraphrased
 leaks are *not* caught by this rule, which under-counts positives. The replies are committed
-at [evals/benchmark/generated/outputs.jsonl](../evals/benchmark/generated/outputs.jsonl) because
+at [experiments/s1guard_finetune/generated/outputs.jsonl](../experiments/s1guard_finetune/generated/outputs.jsonl) because
 generation is not bit-reproducible.
 
 ### 4.4 Splits
@@ -242,7 +242,7 @@ Context questions run as a **separate** backend call. All other questions keep t
 they were calibrated on. The LiteLLM guardrail reads the system prompt from
 `request_data["messages"]`, because LiteLLM's scoped `structured_messages` can omit it.
 
-**Scoring.** [score.py](../evals/benchmark/score.py) calls `Guard.check()`, the same code path
+**Scoring.** [score.py](../experiments/s1guard_finetune/score.py) calls `Guard.check()`, the same code path
 the gateway uses. Detectors are included. Long states (>1,200 chars) are scanned in
 overlapping windows by `predict_long`, and a noul takes its highest-scoring window. Scores are
 cached per tag in `.cache/scores/<tag>.jsonl`. `--reuse` copies scores for rows whose code
@@ -252,7 +252,7 @@ path is identical (rows with no system prompt) between tags.
 
 ## 6. Evaluation protocol
 
-[report.py](../evals/benchmark/report.py), run as `report.py <tags…> --calibrate 0.04`:
+[report.py](../experiments/s1guard_finetune/report.py), run as `report.py <tags…> --calibrate 0.04`:
 
 1. **Refit thresholds per score set on dev: joint calibration.** This is
    `calibrate_policy.calibrated_thresholds`. Each stage has a **4% budget** of additional benign
@@ -294,7 +294,7 @@ Detectors are part of every method. Recall includes regex hits.
 
 ## 7. Fine-tuning procedure
 
-Code: [train_laya.py](../evals/benchmark/train_laya.py).
+Code: [train_laya.py](../experiments/s1guard_finetune/train_laya.py).
 
 **Model facts used.**
 
@@ -354,7 +354,7 @@ using the exact question text the gateway asks:
 | Output | Laya checkpoint dir (`rl_agent_config.json`, `model.safetensors`, `tokenizer/`, `encoder/`); v1 saved fp32 (1.6 GB) | saved with the shipped dtypes (fp16, 842 MB) | same as v2 |
 
 MPS kernels are not fully deterministic, so repeat runs vary slightly even with fixed seeds.
-The checkpoints are gitignored (`evals/benchmark/models/`).
+The checkpoints are gitignored (`experiments/s1guard_finetune/models/`).
 
 ---
 
@@ -489,7 +489,7 @@ question with no signal (escalation, AUROC 0.27, meaning inverted).
 ### 8.5 Phase 4: continued local fine-tuning (v3)
 
 **What changed:**
-- **Benchmark:** grew to 15,022 rows (v3 sources in §4.2 / [evals/benchmark/README.md](../evals/benchmark/README.md)).
+- **Benchmark:** grew to 15,022 rows (v3 sources in §4.2 / [experiments/s1guard_finetune/README.md](../experiments/s1guard_finetune/README.md)).
 - **Training:** v3 continues from v2 with the "local-light" recipe (§7).
 - **Comparison:** all three methods are re-calibrated with the v3 rule (macro recall, capped
   fixed questions) and compared on the v3 **test** split. Source: `.cache/report_v3.txt`.
@@ -598,7 +598,7 @@ against two public prompt-injection encoders on MIT-licensed sets none of them t
 - Gandalf, TrustAIRLab in-the-wild jailbreak/regular, NotInject and SPML;
 - toolcall-guard-v1 `test_unseen_tools`.
 
-The harness is `evals/showdown/` and the full analysis is
+The harness is `experiments/showdown/` and the full analysis is
 [guardrail-showdown.md](guardrail-showdown.md).
 
 | Guard | OOD injection/jailbreak AUROC | OOD macro recall / FPR | Our benchmark AUROC (input) | Tool calls AUROC |
@@ -711,15 +711,15 @@ uv venv --python 3.12 && uv pip install -e '.[laya,gateway,dev]' "datasets>=4" s
 ollama pull gemma4:e2b                         # only needed to regenerate outputs
 export EVALS_REPO=../ai-security-evals        # vendored CyberSecEval / SafeMTData raw files + corpus
 
-# 1. data (HF + InjecAgent downloads cached under evals/benchmark/.cache/)
+# 1. data (HF + InjecAgent downloads cached under experiments/s1guard_finetune/.cache/)
 bash gateway/start_gateway.sh &                # only for gen_outputs.py
-uv run python evals/benchmark/gen_outputs.py   # optional: committed outputs.jsonl is used otherwise
-uv run python evals/benchmark/build_benchmark.py
+uv run python experiments/s1guard_finetune/gen_outputs.py   # optional: committed outputs.jsonl is used otherwise
+uv run python experiments/s1guard_finetune/build_benchmark.py
 uv run python evals/build_datasets.py          # promptfoo smoke set from test groups
 pkill -f "litellm --config"                    # free the GPU before scoring/training
 
 # 2. zero-shot baselines (run jobs one at a time on a 24 GB machine)
-B=evals/benchmark; CB=$B/policies/context-both.yaml   # policy v2 was trained with (input + output context)
+B=experiments/s1guard_finetune; CB=$B/policies/context-both.yaml   # policy v2 was trained with (input + output context)
 uv run python $B/score.py --tag base
 uv run python $B/score.py --tag base-ctx --context --policy $CB --reuse base
 
@@ -767,9 +767,9 @@ uv run python $B/calibrate_policy.py --tag ft4 --out $B/policies/laya-s1guard-v4
 
 # showdown vs public guards + hybrid policy (§8.7)
 uv run python $B/calibrate_policy.py --tag base --out $B/policies/laya-base.yaml
-uv run python evals/showdown/showdown.py build
-for g in regex protectai horizon s1-zeroshot s1-v2 s1-v3 s1-v4; do uv run python evals/showdown/showdown.py run --guard $g; done
-uv run python evals/showdown/showdown.py report && uv run python evals/showdown/showdown.py hybrid-policy
+uv run python experiments/showdown/showdown.py build
+for g in regex protectai horizon s1-zeroshot s1-v2 s1-v3 s1-v4; do uv run python experiments/showdown/showdown.py run --guard $g; done
+uv run python experiments/showdown/showdown.py report && uv run python experiments/showdown/showdown.py hybrid-policy
 ```
 
 **Recipe notes.**
@@ -795,18 +795,18 @@ uv run python evals/showdown/showdown.py report && uv run python evals/showdown/
 
 | Path | Purpose |
 |---|---|
-| `evals/benchmark/sources.py` | Source loaders, grouping, split function, authored fillers/wrappers/system prompts |
-| `evals/benchmark/gen_outputs.py` | Output-stage reply generation and leak labelling |
-| `evals/benchmark/generated/outputs.jsonl` | Committed replies (752) |
-| `evals/benchmark/build_benchmark.py` | Assembles `data/{train,dev,test}.jsonl` and `manifest.json` |
-| `evals/benchmark/score.py` | Scores rows through `Guard.check` (cached, resumable, `--context`, `--reuse`) |
-| `evals/benchmark/report.py` | Per-stage test recall and FPR, `--calibrate`, combiner |
-| `evals/benchmark/calibrate_policy.py` | Joint dev calibration; writes a policy YAML for a score set |
-| `evals/benchmark/policies/laya-s1guard-v2.yaml` | **Deployable policy for fine-tuned v2** (thresholds from `ft2-outctx`) |
-| `evals/benchmark/policies/context-both.yaml` | Policy v2 was trained with (adds the input context question) |
-| `evals/benchmark/policies/laya-s1guard-v4-hybrid.yaml` | **Recommended deployable policy**: v4 plus the Horizon encoder for injection (§8.7) |
-| `evals/showdown/showdown.py` | Comparison with public guards: `ood` and `clean` suites (§8.7) |
-| `evals/benchmark/train_laya.py` | Fine-tuning |
+| `experiments/s1guard_finetune/sources.py` | Source loaders, grouping, split function, authored fillers/wrappers/system prompts |
+| `experiments/s1guard_finetune/gen_outputs.py` | Output-stage reply generation and leak labelling |
+| `experiments/s1guard_finetune/generated/outputs.jsonl` | Committed replies (752) |
+| `experiments/s1guard_finetune/build_benchmark.py` | Assembles `data/{train,dev,test}.jsonl` and `manifest.json` |
+| `experiments/s1guard_finetune/score.py` | Scores rows through `Guard.check` (cached, resumable, `--context`, `--reuse`) |
+| `experiments/s1guard_finetune/report.py` | Per-stage test recall and FPR, `--calibrate`, combiner |
+| `experiments/s1guard_finetune/calibrate_policy.py` | Joint dev calibration; writes a policy YAML for a score set |
+| `experiments/s1guard_finetune/policies/laya-s1guard-v2.yaml` | **Deployable policy for fine-tuned v2** (thresholds from `ft2-outctx`) |
+| `experiments/s1guard_finetune/policies/context-both.yaml` | Policy v2 was trained with (adds the input context question) |
+| `experiments/s1guard_finetune/policies/laya-s1guard-v4-hybrid.yaml` | **Recommended deployable policy**: v4 plus the Horizon encoder for injection (§8.7) |
+| `experiments/showdown/showdown.py` | Comparison with public guards: `ood` and `clean` suites (§8.7) |
+| `experiments/s1guard_finetune/train_laya.py` | Fine-tuning |
 | `src/s1guard/guard.py`, `policy.yaml`, `litellm_guardrail.py` | Context-question support (production) |
 | `evals/build_datasets.py` | promptfoo smoke set (test groups only) |
 

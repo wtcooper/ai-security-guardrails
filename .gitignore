@@ -6,8 +6,12 @@ __pycache__/
 evals/results/
 evals/data/.scores.*.json
 evals/promptfoo/redteam.generated.yaml
-evals/benchmark/.cache/
-evals/benchmark/data/
-evals/benchmark/models/
-evals/showdown/.cache/
-evals/showdown/data/
+experiments/s1guard_finetune/.cache/
+experiments/s1guard_finetune/data/
+experiments/s1guard_finetune/models/
+experiments/showdown/.cache/
+experiments/showdown/data/
+evals/lab/.cache/
+evals/lab/data/*
+!evals/lab/data/manifest.json
+.venv-nemotron/

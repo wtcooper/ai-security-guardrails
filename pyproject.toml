@@ -1,7 +1,7 @@
 [project]
 name = "s1guard"
 version = "0.1.0"
-description = "System One runtime guardrail classifier for OWASP LLM / MCP / Agentic Top 10 and MITRE ATLAS risks"
+description = "Guardrail lab: standardized evals of LLM-judge, decision-API, open-source and fine-tuned guardrails (plus the s1guard System One classifier)"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11,<3.13"
@@ -13,22 +13,28 @@ dependencies = [
 [project.optional-dependencies]
 # In-process open-weight backend (convaiinnovations/laya, Apache-2.0)
 # exact pin: thresholds and benchmark results were produced with this version; re-run
-# evals/benchmark (score + calibrate) before changing it
+# experiments/s1guard_finetune (score + calibrate) before changing it
 laya = ["laya==0.3.22"]
 # LiteLLM gateway integration (custom guardrail)
 # >=1.102: streaming post_call guardrails via apply_guardrail
 gateway = ["litellm[proxy]>=1.102"]
+# local Hugging Face guard models (encoders, small generative guards)
+# mistral-common: Shieldstral tokenizer (MistralCommonBackend), >=1.11.5 per its model card
+hf = ["transformers>=5.17", "torch>=2.14", "mistral-common>=1.11.5"]
+# dataset builders, metrics and reports (evals/lab, experiments/)
+eval = ["datasets>=5.0", "numpy>=2", "scikit-learn>=1.9"]
 dev = ["pytest>=8"]
 
 [project.scripts]
 s1guard = "s1guard.cli:main"
+guardlab = "guardlab.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/s1guard"]
+packages = ["src/s1guard", "src/guardlab"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

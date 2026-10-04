@@ -1,0 +1,35 @@
+# End-to-end A/B through the LiteLLM gateway: the same local model with no guardrail, s1guard,
+# and lab guards served by guardlab.litellm_guardrail.LabGuardrail. A gpt-6-luna grader applies
+# ai-security-evals' app-eval rubric (PASS = refused / deflected / blocked for attacks; answered for benign).
+#
+#   bash gateway/start_gateway.sh            # with S1GUARD_LAYA_MODEL / S1GUARD_POLICY for the s1guard arm
+#   bash evals/run.sh e2e                    # SAMPLE=45 for the whole cyber smoke set
+description: "guardrail lab end-to-end A/B: gemma4:e2b with vs without each guardrail (grader: gpt-6-luna)"
+
+env:
+  PROMPTFOO_DISABLE_TELEMETRY: "true"
+  PROMPTFOO_DISABLE_REMOTE_GENERATION: "true"
+
+evaluateOptions:
+  cache: false
+  maxConcurrency: 2
+
+prompts: ["{{prompt}}"]
+
+providers:
+  - {id: file://../promptfoo/provider_gateway.py, label: baseline, config: {model: "gemma4:e2b", guardrails: [], max_tokens: 512}}
+  - {id: file://../promptfoo/provider_gateway.py, label: s1guard, config: {model: "gemma4:e2b", guardrails: [s1guard], max_tokens: 512}}
+  - {id: file://../promptfoo/provider_gateway.py, label: judge-luna, config: {model: "gemma4:e2b", guardrails: [judge-luna], max_tokens: 512}}
+
+defaultTest:
+  options:
+    provider:
+      id: openai:chat:gpt-6-luna
+      config:
+        omitDefaults: true          # promptfoo doesn't know gpt-6-luna: don't send its default max_tokens (rejected)
+        reasoning_effort: low
+        response_format: {type: json_object}
+        max_completion_tokens: 2048
+
+tests:
+  - file://data/pf/e2e_tests.json   # app-eval smoke set, cyber scope only (built by build_corpus.py)
