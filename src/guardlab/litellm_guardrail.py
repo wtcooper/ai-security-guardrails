@@ -9,6 +9,12 @@ s1guard), so the guard you evaluate is the guard you deploy:
           guard_id: judge-luna          # registry id (src/guardlab/guards.yaml)
           on_unavailable: block         # or allow (fail open): judge down, erroring, or over deadline_s
           deadline_s: 10                # optional: total time budget per hook; over budget = unavailable
+          streaming_buffer_until_moderated: true   # default: hold a streamed reply until the post-call check
+                                        # passes, so a blocked tool call never reaches the client (false: tokens
+                                        # stream live and a block only ends the stream)
+          on_block: refuse              # refuse (default): HTTP 200, fixed refusal, finish_reason "content_filter",
+                                        # no tool calls, and every model call stays billed. error: HTTP 400 "Blocked
+                                        # by ..."; LiteLLM then records a post-call-blocked inference as a $0 failure
           stages: [input, conversation, tool_result, tool_definition, tool_call]   # optional: omit `output` to
                                         # skip the judge on plain-text replies (post-call runs only on tool calls)
           skip_tools: []                # optional: exact names of vetted tools the action check skips;
@@ -18,7 +24,9 @@ Same traffic mapping as s1guard's guardrail: request -> new user turns (input), 
 (conversation), new tool results, tool definitions; response -> reply (output, with the system prompt)
 and tool calls (tool_call, with the system prompt, the user's recent turns as trusted context and the
 agent's earlier steps as untrusted history); MCP -> call + tool descriptions, then results.
-A block raises GuardrailRaisedException -> HTTP 400 "Blocked by <guard id> (<request|response>): <reason>".
+A block either refuses in-band (on_block: refuse -> HTTP 200 with a fixed message and finish_reason
+"content_filter"; the reason goes to the gateway log, not the caller) or raises GuardrailRaisedException
+(on_block: error -> HTTP 400 "Blocked by <guard id> (<request|response>): <reason>").
 Judges with `transport: litellm` call their model through this gateway's router, billed to the caller's
 key (chargeback; router calls skip guardrails, so no recursion); other guards call their provider directly.
 """
@@ -40,6 +48,7 @@ from .registry import load_guard
 from .trajectory import task_context
 from .types import CALLER, Case
 
+REFUSAL_MESSAGE = "A security policy violation was detected, so this request was not completed."
 VERDICT_CACHE_SIZE = 4096   # identical checks (e.g. the same tool definitions sent on every agent turn) are judged once
 
 
@@ -85,8 +94,14 @@ def cases_from_inputs(inputs: dict, request_data: dict, input_type: str, skip_to
 
 class LabGuardrail(CustomGuardrail):
     def __init__(self, guard_id: str = "", on_unavailable: str = "block", stages=None, skip_tools=None,
-                 deadline_s: Optional[float] = None, **kwargs):
+                 deadline_s: Optional[float] = None, on_block: str = "refuse", refusal_message: str = REFUSAL_MESSAGE,
+                 streaming_buffer_until_moderated: bool = True, **kwargs):
         super().__init__(**kwargs)
+        # read by LiteLLM's unified guardrail: withhold streamed chunks until the end-of-stream check passes
+        self.streaming_buffer_until_moderated = bool(streaming_buffer_until_moderated)
+        if on_block not in ("error", "refuse"):
+            raise ValueError(f"on_block must be 'error' or 'refuse', not {on_block!r}")
+        self.on_block, self.refusal_message = on_block, refusal_message
         self.guard_id = guard_id or self.guardrail_name
         self.on_unavailable = on_unavailable
         self.deadline_s = float(deadline_s) if deadline_s else None
@@ -112,9 +127,7 @@ class LabGuardrail(CustomGuardrail):
                                          type(e).__name__, str(e)[:200], self.on_unavailable)
             if self.on_unavailable != "block":
                 return inputs
-            raise GuardrailRaisedException(guardrail_name=self.guardrail_name,
-                                           message=f"Blocked by {self.guard_id} ({input_type}): unavailable ({type(e).__name__})",
-                                           should_wrap_with_default_message=False, blocked_content=True)
+            return self._block(inputs, request_data, input_type, f"unavailable ({type(e).__name__})")
         blocks = [(c, r) for c, r in zip(cases, results) if r.status == "ok" and r.blocked]
         down = [(c, r) for c, r in zip(cases, results) if r.status in ("unavailable", "error")]
         if down and self.on_unavailable == "block":
@@ -128,10 +141,40 @@ class LabGuardrail(CustomGuardrail):
         if blocks:
             reason = "; ".join(f"{c.stage}: {r.reason if r.status == 'ok' else 'unavailable (' + r.reason[:80] + ')'}"
                                for c, r in blocks)
-            raise GuardrailRaisedException(guardrail_name=self.guardrail_name,
-                                           message=f"Blocked by {self.guard_id} ({input_type}): {reason}",
-                                           should_wrap_with_default_message=False, blocked_content=True)
+            return self._block(inputs, request_data, input_type, reason)
         return inputs
+
+    def _block(self, inputs, request_data: dict, input_type: str, reason: str):
+        if self.on_block == "refuse":
+            # a complete (non-streamed) reply can be rewritten in place; a stream must be ended by LiteLLM instead
+            in_place = input_type == "response" and not request_data.get("stream")
+            refused = self._refuse_in_place(inputs, request_data) if in_place else None
+            if refused is not None:
+                return refused
+            # pre-call (the model never ran) or a streamed reply: LiteLLM's in-band 200 refusal
+            self.raise_passthrough_exception(violation_message=self.refusal_message, request_data=request_data,
+                                             detection_info={"guard": self.guard_id, "hook": input_type, "reason": reason[:500]})
+        raise GuardrailRaisedException(guardrail_name=self.guardrail_name,
+                                       message=f"Blocked by {self.guard_id} ({input_type}): {reason}",
+                                       should_wrap_with_default_message=False, blocked_content=True)
+
+    def _refuse_in_place(self, inputs, request_data: dict):
+        """Post-call refusal that keeps billing intact: the model's reply has already been generated (and paid
+        for), so rewrite that reply instead of raising. The call then completes as a normal success, and LiteLLM
+        records its real cost against the caller's key. (Raising at post-call, as 400 or as a passthrough 200,
+        records the inference as a $0 failure.) Returns None when there is no complete reply to rewrite."""
+        choices = getattr(request_data.get("response"), "choices", None)
+        if not choices or any(getattr(c, "message", None) is None for c in choices):
+            return None
+        for choice in choices:
+            choice.message.content = self.refusal_message
+            choice.message.tool_calls = None
+            if getattr(choice.message, "function_call", None) is not None:
+                choice.message.function_call = None
+            choice.finish_reason = "content_filter"
+        out = dict(inputs)
+        out["texts"] = [self.refusal_message] * len(inputs.get("texts") or [])   # LiteLLM writes texts back
+        return out
 
     async def _run(self, inputs, request_data: dict, input_type: str) -> tuple:
         guard = self.guard

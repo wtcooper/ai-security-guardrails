@@ -81,9 +81,21 @@ The `cyber-guard` entry in [gateway/litellm_config.yaml](../gateway/litellm_conf
     guard_id: judge-luna-consolidated-gw # judge calls billed to the caller's team key
     on_unavailable: allow                # fail open: judge down, erroring or over budget -> inference proceeds
     deadline_s: 10                       # total time budget per hook
+    on_block: refuse                     # 200 refusal, finish_reason "content_filter"; every model call stays billed
+    streaming_buffer_until_moderated: true   # (default) a blocked tool call never reaches a streaming client
     stages: [input, conversation, tool_result, tool_definition, tool_call]   # no `output`
     skip_tools: []
 ```
+
+**How a block looks to the caller:**
+- HTTP 200 with a fixed message: "A security policy violation was detected, so this request was not
+  completed."
+- `finish_reason: "content_filter"` and no tool calls. This is what model APIs do, so chat UIs and agents
+  end the turn gracefully, and applications can still detect a block from `finish_reason`.
+- The reason (guard, hook, stage, judge verdict) goes to the gateway log, not to the caller, so the guard
+  can't be used as an oracle.
+- `on_block: error` returns the old HTTP 400 instead. But LiteLLM then bills a post-call-blocked
+  inference as $0, so it isn't recommended. See [chargeback.md](chargeback.md).
 
 **Fail-open behaviour:** if the judge is down, errors, is misconfigured or exceeds `deadline_s`, the
 request proceeds and the gateway logs a warning (`guard failed ...; on_unavailable=allow`). This was

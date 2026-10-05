@@ -84,6 +84,7 @@ def test_block_becomes_a_refusal_and_other_errors_pass_through(via):
     status, j = post("cyberguard", "attack")
     msg = j["choices"][0]["message"]
     assert status == 200 and msg["content"].startswith("[blocked by guardrail] Blocked by") and "tool_calls" not in msg
+    assert j["choices"][0]["finish_reason"] == "content_filter"
     assert post("baseline", "bad key")[0] == 401                         # never disguised as a block
     recs = [json.loads(line) for line in audit.read_text().splitlines()]
     assert [(r["status"], r["blocked"]) for r in recs] == [(400, "request"), (401, None)]

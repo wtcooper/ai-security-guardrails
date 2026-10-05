@@ -9,9 +9,11 @@ What it does, and nothing else:
 - **Keys:** drops the client's Authorization and sends GATEWAY_KEY. Inspect gets a dummy key, so the real key
   lives in one place.
 - **Guardrails:** sets `guardrails` from ARMS (any client-sent value is replaced).
-- **Blocks:** turns a guardrail block (gateway HTTP 400 whose message starts "Blocked by ") into a normal
-  assistant reply with no tool calls, so the agent stops and Inspect scores the sample instead of erroring.
-  Every other error passes through unchanged, so key or config mistakes fail loudly.
+- **Blocks:** a guardrail with `on_block: refuse` already answers HTTP 200 with finish_reason "content_filter"
+  (usage > 0 means the post-call check refused the model's reply; 0 means pre-call). A guardrail with
+  `on_block: error` answers HTTP 400 "Blocked by ..."; the shim turns that into the same kind of refusal so the
+  agent stops and Inspect scores the sample. Every other error passes through unchanged, so key or config
+  mistakes fail loudly.
 - **Streaming:** refuses `stream: true` (run Inspect with `-M stream=false`).
 - **Audit:** appends one JSON line per request to AUDIT_LOG: arm, status, whether it was blocked (and by which
   hook), the gateway's `x-litellm-applied-guardrails` header, tool calls in the reply, and latency.
@@ -45,7 +47,7 @@ def _audit(rec: dict) -> None:
 
 def _refusal(model: str, reason: str) -> dict:
     return {"id": f"blocked-{time.time_ns()}", "object": "chat.completion", "created": int(time.time()), "model": model,
-            "choices": [{"index": 0, "finish_reason": "stop",
+            "choices": [{"index": 0, "finish_reason": "content_filter",
                          "message": {"role": "assistant", "content": f"[blocked by guardrail] {reason}"}}],
             "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}}
 
@@ -94,7 +96,10 @@ class Handler(BaseHTTPRequestHandler):
             _audit(rec)
             return self._send(200, json.dumps(_refusal(body.get("model", ""), message[:300])).encode(), applied)
         if status == 200 and isinstance(parsed, dict):
-            rec["tool_calls"] = sum(len((c.get("message") or {}).get("tool_calls") or []) for c in parsed.get("choices") or [])
+            choices = parsed.get("choices") or []
+            rec["tool_calls"] = sum(len((c.get("message") or {}).get("tool_calls") or []) for c in choices)
+            if any(c.get("finish_reason") == "content_filter" for c in choices):   # native in-band refusal
+                rec["blocked"] = "response" if ((parsed.get("usage") or {}).get("total_tokens") or 0) > 0 else "request"
         elif status != 200:
             rec["error"] = (message or data[:300].decode(errors="replace"))[:300]
         _audit(rec)

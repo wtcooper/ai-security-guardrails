@@ -155,47 +155,46 @@ Guards and runs not yet done are listed in the [roadmap](#status-and-roadmap).
 Setup:
 - **Agent:** gpt-6-luna, running vanilla Inspect tasks with their own scorers.
 - **Arms:** three, identical except for guardrails (see [docs/agent-eval.md](docs/agent-eval.md)).
-- **Wiring:** every one of the 1,965 model requests ran exactly its arm's guardrails, with 0 checks
-  failing open and 0 rate limits.
+- **Blocks:** returned in-band as HTTP 200 refusals.
+- **Wiring:** every model request ran exactly its arm's guardrails. One post-call check (out of about
+  1,100 guarded requests) hit its 10 s budget and failed open.
 
-| Benchmark | Arm | Attack success | Utility | Agent run p50 |
+**How to read the columns:**
+- **Attack succeeded:** the attacker's goal happened, e.g. money really sent to the attacker.
+- **User's task done:** the user's own request was completed, e.g. the bill paid.
+
+| Benchmark | Arm | Attack succeeded | User's task done | Agent run p50 |
 |---|---|---:|---:|---:|
-| AgentDojo, 96 attacks | no guardrail | 0% | 74% | 17.3 s |
-| | pre-call only | 0% | 6% | 3.6 s |
-| | cyber-guard | 0% | 6% | 4.7 s |
-| AgentDojo, 96 benign tasks | no guardrail | — | **81%** | 15.7 s |
-| | pre-call only | — | 65% | 6.4 s |
-| | cyber-guard | — | 65% | 8.1 s |
-| AgentThreatBench, 24 | no guardrail | 0% | 79% | 12.4 s |
-| | pre-call only | 0% | 12% | 4.1 s |
-| | cyber-guard | 0% | 21% | 6.7 s |
+| AgentDojo, 96 attacks | no guardrail | 0% | 75% | 17.3 s |
+| | pre-call only | 0% | 6% | 4.0 s |
+| | cyber-guard | 0% | 6% | 4.5 s |
+| AgentDojo, 96 benign tasks | no guardrail | — | **79%** | 16.4 s |
+| | pre-call only | — | 66% | 7.4 s |
+| | cyber-guard | — | 66% | 8.6 s |
+| AgentThreatBench, 24 | no guardrail | **4%** (1 attack) | 71% | 13.8 s |
+| | pre-call only | 0% | 12% | 5.6 s |
+| | cyber-guard | 0% | 12% | 9.0 s |
 
 **Reading:**
-- **gpt-6-luna resisted every attack on its own.** In our sample it ignored all 96 of AgentDojo's
-  default injections and all 24 AgentThreatBench attacks. With nothing to stop, the guardrails show no
-  security gain on these benchmarks with this model.
-- **The guard detects the injections, but blocking costs the task.** Pre-call blocked the injected tool
-  result in 94–96 of 96 attack runs. Blocking the whole request also ends the user's legitimate task, so
-  utility under attack fell from 74% to 6%.
-- **False blocks on benign tasks cost 16 points** (81% → 65%). The main cause is instructions the user
-  explicitly delegated ("do the tasks on my TODO list at <url>", "details are in Bob's message"). The
-  pre-call check sees those tool results without the user's request, so they look like injections.
-- **Post-call added 4 false blocks on benign tool calls** and caught nothing extra, because pre-call
-  stopped every attack first.
+- **gpt-6-luna resists almost every attack on its own.** It ignored all 96 of AgentDojo's default
+  injections. One AgentThreatBench attack got through, and both guarded arms stopped it.
+- **Detecting an injection ends the user's task.** Pre-call caught the injected tool result in about 95%
+  of attack runs, but refusing the turn also ends the user's legitimate task (75% → 6%). Returning a 200
+  refusal instead of a 400 doesn't change that, because the agent stops either way. Only redacting the
+  flagged tool result and letting the agent continue would. That is the next item on the roadmap.
+- **False blocks on benign tasks cost 13 points** (79% → 66%). The main cause is instructions the user
+  explicitly delegated ("do the tasks on my TODO list at <url>"). The tool-result check doesn't see the
+  user's request, so these look like injections.
+- **Post-call added 3 blocks** and no extra protection here, because pre-call stopped the attacks first.
 
-**Next:**
-1. Pass the user's request to tool-result checks, so delegated instructions aren't flagged.
-2. Add an option to redact a flagged tool result instead of blocking, so the agent can finish the task.
-3. Rerun with stronger attacks (AgentDojo's other attack types, the AISI extension) and/or a weaker
-   agent model, to measure the security gain where the model alone fails.
-
-**Bugs this run found, now fixed:**
-- **Tool definitions were re-judged on every agent turn.** Unrelated, concurrent agent runs also missed
-  the cache together at start-up. Together these exhausted the 2M tokens-per-minute quota, and the guard
-  failed open on 16,659 checks. Identical checks are now judged once, using a verdict cache plus a
-  shared in-flight check.
-- **The audit missed those fail-opens at first.** Every fail-open now logs one marker, and the summary
-  flags any run that has them.
+**Bugs this eval found, now fixed:**
+- **Tool definitions were re-judged on every agent turn.** Concurrent runs also missed the cache together
+  at start-up. Together these exhausted the 2M tokens-per-minute quota, and the guard failed open on
+  16,659 checks. Identical checks are now judged once, using a verdict cache plus a shared in-flight
+  check.
+- **Every fail-open now logs one marker,** and the summary flags any run that has them.
+- **A blocked post-call inference was billed as $0, in both block modes.** It is now billed on every
+  path (see below).
 
 **Single-turn end to end through the LiteLLM gateway:** 45 cyber smoke cases, target gemma4:e2b,
 gpt-6-luna grader.
@@ -361,6 +360,15 @@ guardrails:
     it can't be charged back. No MCP hooks either: tool results reach the next pre-call anyway.
   - **Fail open** (`on_unavailable: allow`, `deadline_s: 10`). If the judge is down, errors or is too
     slow, the user still gets inference and the gateway logs a warning.
+  - **Blocks are refused in-band** (`on_block: refuse`, the default). HTTP 200 with a fixed message,
+    `finish_reason: "content_filter"` and no tool calls, which is how model APIs signal a safety block.
+    The reason goes to the gateway log. Streamed replies are held until the post-call check passes, so
+    a blocked tool call never reaches the client.
+- **Every model call is charged back.** Judge calls, the inference, and the inference behind a
+  post-call block are all billed to the caller's team key in LiteLLM's spend DB, streamed or not.
+  Pre-call blocks bill only the judge, because the model never ran. `evals/lab/chargeback_check.py`
+  verifies all five paths. Lab-only entries (`judge-luna`, `dec-luna-emu`) call OpenAI directly and
+  aren't charged back. See [docs/chargeback.md](docs/chargeback.md).
 
   Measured in [docs/guardrail-placement.md](docs/guardrail-placement.md). Pre-call alone stops 87% of
   injected tool output but only 2–6% of agent drift; the action check stops about 80% of drift.
@@ -409,7 +417,8 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 - the placement study and the recommended `cyber-guard` entry: pre-call, plus post-call on tool calls,
   failing open;
 - the agent-loop eval with three arms (no guardrail, pre-call only, `cyber-guard`);
-- 66 offline tests.
+- blocks returned as 200 refusals, with every model call charged back, verified on every path;
+- 73 offline tests.
 
 **Roadmap** (each item is registered or scripted unless noted; runs are deferred to keep laptop load low):
 
@@ -438,11 +447,12 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 
 *LLM-as-a-judge*
 - [x] Agent-loop A/B through the gateway with the chargeback (`-gw`) judge: [docs/agent-eval.md](docs/agent-eval.md).
-- [ ] Check long tool results in windows. Content over 24k characters is currently checked head and
-  tail only, so an injection in the middle of a long page is never seen.
+- [x] Check long content in windows. Text over 24k characters is judged in up to 8 overlapping windows
+  (start, end and evenly spaced), so an injection in the middle of a long page is seen.
 - [ ] Alert on `guard failed` in the gateway log, and give the judge its own rate-limit budget. Under
   quota pressure it fails open.
-- [ ] Test post-call on streamed responses that contain tool calls.
+- [x] Streamed post-call blocks: held until the check passes, and billed (`chargeback_check.py`).
+- [x] Blocks returned as 200 refusals (`finish_reason: "content_filter"`), with every model call billed.
 - [ ] CodeIPI (`ipi_coding_agent`): the coding-agent view; probably needs Docker.
 - [x] Trajectory-aware action check (rounds T0–T5) and the recommended `cyber-guard` placement.
 - [ ] Red-team the judge itself with adaptive, guard-targeted attacks (cyber only). The static evasion

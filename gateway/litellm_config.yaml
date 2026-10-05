@@ -35,6 +35,7 @@ guardrails:
       mode: [pre_call, post_call, pre_mcp_call, post_mcp_call]
       default_on: false
   # Any guardlab registry guard (src/guardlab/guards.yaml) via one generic guardrail class.
+  # LAB ONLY: this judge calls OpenAI directly, so its cost is NOT in LiteLLM's spend DB. Deploy cyber-guard.
   - guardrail_name: judge-luna
     litellm_params:
       guardrail: guardlab.litellm_guardrail.LabGuardrail
@@ -42,6 +43,7 @@ guardrails:
       default_on: false
       guard_id: judge-luna
       on_unavailable: block
+      on_block: error          # the single-turn e2e A/B reads 400 "Blocked by" messages
   # Same judges, but their luna calls go through THIS gateway's router with the caller's key metadata,
   # so LiteLLM writes each judge call to the spend DB against the calling team key (chargeback).
   - guardrail_name: judge-luna-gw
@@ -51,6 +53,7 @@ guardrails:
       default_on: false
       guard_id: judge-luna-gw
       on_unavailable: block
+      on_block: refuse         # keeps post-call-blocked inference billed
   - guardrail_name: judge-luna-consolidated-gw
     litellm_params:
       guardrail: guardlab.litellm_guardrail.LabGuardrail
@@ -62,6 +65,7 @@ guardrails:
   # tool results, tool definitions) before the model reads it; check the model's tool calls before they
   # run; skip plain-text replies (no post-call latency on chat). No MCP hooks: tool results reach the
   # next inference anyway. pre_call (not during_call), so a block never cancels billed inference.
+      on_block: refuse
   - guardrail_name: cyber-guard
     litellm_params:
       guardrail: guardlab.litellm_guardrail.LabGuardrail
@@ -70,6 +74,7 @@ guardrails:
       guard_id: judge-luna-consolidated-gw
       on_unavailable: allow   # fail open: judge down, erroring or over budget -> inference proceeds (logged)
       deadline_s: 10          # total time budget per hook (normal p95 ~3 s)
+      on_block: refuse        # HTTP 200, fixed refusal, finish_reason "content_filter" (reason in the gateway log)
       stages: [input, conversation, tool_result, tool_definition, tool_call]
       skip_tools: []          # exact names of vetted tools only; unknown tools are always checked
   # Same guard, pre-call only: the agent-loop eval's middle arm (isolates what post-call adds).
@@ -81,7 +86,9 @@ guardrails:
       guard_id: judge-luna-consolidated-gw
       on_unavailable: allow
       deadline_s: 10
+      on_block: refuse
       stages: [input, conversation, tool_result, tool_definition]
+  # LAB ONLY: the decisions emulator calls OpenAI directly, so its cost is NOT in LiteLLM's spend DB.
   - guardrail_name: dec-luna-emu
     litellm_params:
       guardrail: guardlab.litellm_guardrail.LabGuardrail
@@ -89,6 +96,7 @@ guardrails:
       default_on: false
       guard_id: dec-luna-emu
       on_unavailable: block
+      on_block: error
 
 general_settings:
   master_key: sk-local

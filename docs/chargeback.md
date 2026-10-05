@@ -19,19 +19,47 @@ LiteLLM's database, using **the same gateway model deployment** as the inference
 - **No recursion.** Router calls do not pass through proxy guardrails, so the judge never screens
   its own calls.
 
-## Verified (2026-10-04, local Postgres)
+## Verified on every path (2026-10-05, local Postgres)
 
-One gpt-6-luna request through `judge-luna-consolidated-gw` with a fresh team key produced:
+[evals/lab/chargeback_check.py](../evals/lab/chargeback_check.py) sends one request down each path a guarded
+request can take, using a fresh team and one key per path, and checks the spend DB. It exits 1 on any miss.
 
-| call | spend | tags |
-|---|---:|---|
-| pre-call judge | $0.0000345 | `guardrail:judge-luna-consolidated-gw`, `guardrail_stage:pre_call` |
-| inference | $0.0000407 | — |
-| post-call judge | $0.0000295 | `guardrail:judge-luna-consolidated-gw`, `guardrail_stage:post_call` |
+| Path | Does the model run? | Recorded against the team key |
+|---|---|---|
+| allowed | yes | inference success + judge call(s) |
+| pre-call block | no | judge call(s) only: there is no inference to bill |
+| post-call block | yes | inference success + judge calls: the reply was generated, so it is billed |
+| streamed post-call block | yes | same; no tool-call chunk reaches the client |
+| streamed allowed | yes | inference success + judge call(s) |
 
-- **Totals match:** the sum of the rows equals the key spend and the team spend ($0.00010472).
-- **Per-policy comparison (`judge-luna-gw`):** 4 rows, because input runs 2 policies in parallel.
-  That request cost $0.00032882, about 3× the consolidated judge.
+For every path, the key's spend equals the sum of its rows and the team's spend equals the sum over its keys.
+
+**Results:** **CHARGEBACK OK** for `cyber-guard`, `judge-luna-consolidated-gw` and `judge-luna-gw`, and for
+`cyber-guard-pre` (run with `--pre-call-only`).
+
+### What makes every path billable
+
+- **Post-call blocks rewrite the reply instead of raising** (`on_block: refuse`, the default). The
+  generated reply becomes a fixed refusal: tool calls are removed and `finish_reason` is set to
+  `"content_filter"`. The call then completes as a normal success, and LiteLLM records its real cost.
+  We measured the alternative: **raising at post-call, as a 400 or as LiteLLM's passthrough 200, records
+  the inference as a `failure` with $0**, although the provider charged for it.
+- **Streamed replies are held until the post-call check passes** (`streaming_buffer_until_moderated`, on by
+  default). A blocked stream then ends with the refusal, and the inference is still billed.
+- **Pre-call blocks bill only the judge.** The model never ran.
+- **Repeated identical checks** (for example, tool definitions re-sent on every agent turn) are answered from
+  the guard's verdict cache. No judge call runs, so there is correctly nothing to bill.
+
+### What is not charged back
+
+- **`during_call`.** A block cancels the in-flight inference, and LiteLLM records $0 for it (see
+  [guardrail-placement.md](guardrail-placement.md)). Don't use it.
+- **`on_block: error`.** Post-call-blocked inference is recorded as a $0 failure. Only the lab entries
+  that need 400 messages use it.
+- **Lab-only entries `judge-luna` and `dec-luna-emu`.** They call OpenAI directly, so their judge cost
+  never reaches LiteLLM. Deploy `cyber-guard` or a `-gw` entry instead.
+- **A judge call that times out** (20 s) is recorded as a $0 failure, even though the provider may bill
+  a partial generation. This is rare: the normal p95 is about 3 s.
 
 ## Reproduce
 
@@ -40,7 +68,7 @@ docker run -d --name guardlab-litellm-db -e POSTGRES_USER=litellm -e POSTGRES_PA
     -e POSTGRES_DB=litellm -p 127.0.0.1:5433:5432 postgres:17-alpine
 uv run prisma generate --schema .venv/lib/python3.12/site-packages/litellm/proxy/schema.prisma   # once
 DATABASE_URL=postgresql://litellm:litellm-local@127.0.0.1:5433/litellm bash gateway/start_gateway.sh
-uv run python evals/lab/chargeback_check.py --guardrail judge-luna-consolidated-gw   # or judge-luna-gw
+uv run python evals/lab/chargeback_check.py --guardrail cyber-guard   # or a -gw entry; --pre-call-only for cyber-guard-pre
 ```
 
 ## Reporting

@@ -51,10 +51,12 @@ def call(arm: str, body: dict) -> tuple:
                                  headers={"Content-Type": "application/json", "Authorization": "Bearer dummy"})
     with urllib.request.urlopen(req, timeout=120) as r:
         j, applied = json.loads(r.read()), r.headers.get("x-litellm-applied-guardrails", "")
-    msg = j["choices"][0]["message"]
-    content = msg.get("content") or ""
-    if content.startswith("[blocked by guardrail]"):
+    choice = j["choices"][0]
+    msg, content = choice["message"], choice["message"].get("content") or ""
+    if content.startswith("[blocked by guardrail]"):   # on_block: error, converted by the shim
         return f"blocked: {'response' if '(response)' in content.split(':', 2)[0] + content.split(':', 2)[1] else 'request'}", applied
+    if choice.get("finish_reason") == "content_filter":   # on_block: refuse (native 200); usage > 0 = post-call
+        return f"blocked: {'response' if ((j.get('usage') or {}).get('total_tokens') or 0) > 0 else 'request'}", applied
     return ("tool call" if msg.get("tool_calls") else "answered"), applied
 
 

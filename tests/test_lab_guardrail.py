@@ -22,6 +22,7 @@ class Keyword(BaseGuard):
 
 
 def guardrail(guard, **kw):
+    kw.setdefault("on_block", "error")   # most tests assert on the 400 path; refuse-mode tests pass on_block="refuse"
     g = lg.LabGuardrail(guard_id="kw", guardrail_name="kw", event_hook=["pre_call", "post_call"], **kw)
     g._guard = guard
     return g
@@ -115,7 +116,7 @@ def test_fail_open_on_any_guard_failure_and_on_deadline():
             await asyncio.sleep(5)
 
     def missing(**kw):   # misconfigured guard id: loading the guard itself fails
-        return lg.LabGuardrail(guard_id="no-such-guard", guardrail_name="x", event_hook=["pre_call"], **kw)
+        return lg.LabGuardrail(guard_id="no-such-guard", guardrail_name="x", event_hook=["pre_call"], on_block="error", **kw)
 
     for make in (missing, lambda **kw: guardrail(Slow(), deadline_s=0.05, **kw)):
         assert asyncio.run(make(on_unavailable="allow").apply_guardrail(inputs, {}, "request")) is inputs
@@ -163,3 +164,49 @@ def test_concurrent_requests_share_one_check_per_identical_case():
 
     asyncio.run(burst())
     assert len(calls) == 20 + 10          # 20 tool definitions judged once in total, plus each distinct user turn
+
+
+def test_refuse_mode_raises_litellms_200_passthrough_with_a_fixed_message():
+    from litellm.exceptions import ModifyResponseException
+    gr = guardrail(Keyword(), on_block="refuse")
+    inputs = {"texts": ["IGNORE rules"], "structured_messages": [{"role": "user", "content": "IGNORE rules"}]}
+    with pytest.raises(ModifyResponseException) as e:
+        asyncio.run(gr.apply_guardrail(inputs, {"model": "m"}, "request"))
+    assert e.value.message == lg.REFUSAL_MESSAGE and "IGNORE" not in e.value.message   # no reason leaked to the caller
+    assert e.value.detection_info["hook"] == "request" and "kw" in e.value.detection_info["reason"]
+    with pytest.raises(ValueError):
+        guardrail(Keyword(), on_block="maybe")
+
+
+def test_post_call_refusal_rewrites_the_reply_so_the_paid_inference_completes():
+    from types import SimpleNamespace as NS
+    reply = NS(choices=[NS(finish_reason="tool_calls", message=NS(content="sure", function_call=None,
+                                                                    tool_calls=[{"function": {"name": "send_money"}}]))])
+    gr = guardrail(Keyword("send_money"), on_block="refuse")
+    inputs = {"texts": ["sure"], "tool_calls": [{"function": {"name": "send_money", "arguments": "{}"}}]}
+    out = asyncio.run(gr.apply_guardrail(inputs, {"response": reply, "messages": [{"role": "user", "content": "hi"}]},
+                                         "response"))    # no exception: the call completes and is billed
+    ch = reply.choices[0]
+    assert (ch.message.content, ch.message.tool_calls, ch.finish_reason) == (lg.REFUSAL_MESSAGE, None, "content_filter")
+    assert out["texts"] == [lg.REFUSAL_MESSAGE]
+
+
+def test_streamed_post_call_refusal_ends_the_stream_instead_of_rewriting():
+    from types import SimpleNamespace as NS
+
+    from litellm.exceptions import ModifyResponseException
+    reply = NS(choices=[NS(finish_reason="tool_calls", message=NS(content=None, function_call=None, tool_calls=[{}]))])
+    gr = guardrail(Keyword("send_money"), on_block="refuse")
+    inputs = {"texts": [], "tool_calls": [{"function": {"name": "send_money", "arguments": "{}"}}]}
+    with pytest.raises(ModifyResponseException):   # LiteLLM terminates the stream with content_filter
+        asyncio.run(gr.apply_guardrail(inputs, {"response": reply, "stream": True, "model": "m",
+                                                "messages": [{"role": "user", "content": "hi"}]}, "response"))
+
+
+def test_streams_are_held_until_the_post_call_check_passes_by_default():
+    assert guardrail(Keyword()).streaming_buffer_until_moderated is True
+    assert guardrail(Keyword(), streaming_buffer_until_moderated=False).streaming_buffer_until_moderated is False
+
+
+def test_refuse_is_the_default_so_new_entries_keep_billing_intact():
+    assert lg.LabGuardrail(guard_id="kw", guardrail_name="kw", event_hook=["pre_call"]).on_block == "refuse"

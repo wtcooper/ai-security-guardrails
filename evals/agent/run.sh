@@ -20,7 +20,7 @@ case "${1:-}" in
     curl -sf localhost:4000/health/liveliness >/dev/null && { echo "port 4000 busy: stop the running gateway first" >&2; exit 1; }
     bash "$ROOT/gateway/start_gateway.sh" > "$RUN/gateway.log" 2>&1 & GW=$!
     AUDIT_LOG="$RUN/audit.jsonl" python3 "$HERE/shim.py" > "$RUN/shim.log" 2>&1 & SHIM=$!
-    trap 'kill $SHIM $GW 2>/dev/null; pkill -f "litellm --config $ROOT/gateway" 2>/dev/null || true' EXIT
+    trap 'kill $SHIM $GW 2>/dev/null || true' EXIT   # only what this run started (start_gateway.sh execs litellm)
     for _ in $(seq 60); do curl -sf localhost:4000/health/liveliness >/dev/null && break; sleep 2; done
     python3 "$HERE/preflight.py" http://127.0.0.1:8900 "$RUN/gateway.log" | tee "$RUN/preflight.txt"
     : > "$RUN/audit.jsonl"   # audit only the eval's own traffic

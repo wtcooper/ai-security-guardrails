@@ -51,9 +51,11 @@ OpenAI.
 - **Keys:** it replaces the client's API key with the gateway key, so Inspect only ever holds a dummy
   key.
 - **Guardrails:** it sets `guardrails` to the arm's list.
-- **Blocks:** it turns a guardrail block into an ordinary assistant reply with no tool calls, so the
-  agent stops and the sample is scored. Every other error passes through, so a key or configuration
-  mistake fails loudly instead of looking like a block.
+- **Blocks:** with `on_block: refuse` (the default), the gateway already returns a 200 refusal with
+  `finish_reason: "content_filter"`. Usage above zero means the post-call check fired; zero means
+  pre-call. For guardrails in `on_block: error` mode, the shim turns their HTTP 400 into the same kind
+  of refusal. Every other error passes through, so a key or configuration mistake fails loudly instead
+  of looking like a block.
 
 **Inspect settings:** `stream=false`, because the shim works request by request, and
 `strict_tools=false`, because AgentDojo's tools have optional parameters that OpenAI's strict schemas
@@ -80,7 +82,8 @@ reject.
 ## Results (2026-10-05)
 
 See the [README](../README.md#agent-loops-through-the-gateway-agentdojo--agentthreatbench-2026-10-05)
-for the table and reading. Run directories marked `-INVALID-` are kept as a record of the two
+for the table and reading. The reported run is `20261005-081614-full`, with native 200 refusals; run
+`20261005-073721-full`, which used 400s converted by the shim, gave the same picture. Run directories marked `-INVALID-` are kept as a record of the two
 fail-open bugs that this eval found:
 - tool definitions re-judged on every turn;
 - concurrent agent runs missing the cache together at start-up.

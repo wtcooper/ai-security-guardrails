@@ -17,6 +17,7 @@ import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from importlib import resources
 
 import httpx
@@ -41,6 +42,20 @@ STAGE2_SCHEMA = {"type": "json_schema", "json_schema": {"name": "verdict", "stri
                    "confidence": {"type": "number"}}}}}
 MAX_CHARS = 24000   # longer content: head + tail
 MAX_TRUSTED_CHARS = 8000   # each trusted field (system prompt, user request): head + tail
+WINDOW_OVERLAP = 1000      # longer content is judged in overlapping windows of MAX_CHARS ...
+MAX_WINDOWS = 8            # ... at most this many, evenly spaced and always including the start and the end
+
+
+def windows(case: Case) -> list:
+    """The case itself, or overlapping MAX_CHARS slices of its text, so an instruction in the middle of a
+    long page or document is judged too (blocked if any window violates)."""
+    t = case.text
+    if len(t) <= MAX_CHARS:
+        return [case]
+    starts = list(range(0, len(t) - WINDOW_OVERLAP, MAX_CHARS - WINDOW_OVERLAP))
+    if len(starts) > MAX_WINDOWS:
+        starts = [starts[round(i * (len(starts) - 1) / (MAX_WINDOWS - 1))] for i in range(MAX_WINDOWS)]
+    return [replace(case, text=t[s:s + MAX_CHARS]) for s in starts]
 OUTPUT_LIMIT_RETRY_TOKENS = 64   # stage 1 asks for one digit; if the model overruns a tiny budget, retry once with room
 
 
@@ -237,16 +252,17 @@ class LLMJudge(BaseGuard):
             return done.value
 
     def _jobs(self, case: Case) -> list:
+        """(policy, case) pairs: each policy (or all of them combined) on each window of the content."""
         names = self.cfg["policies"][case.stage]
-        return ["+".join(names)] if self.cfg["combine"] else names
+        return [(n, w) for n in (["+".join(names)] if self.cfg["combine"] else names) for w in windows(case)]
 
     def _check(self, case: Case) -> GuardResult:
         if self.cfg["transport"] == "litellm":
             raise RuntimeError("transport=litellm runs only inside the LiteLLM gateway (use acheck)")
-        return self._result(list(self._pool.map(lambda n: self._judge(n, case), self._jobs(case))))
+        return self._result(list(self._pool.map(lambda job: self._judge(*job), self._jobs(case))))
 
     async def _acheck(self, case: Case) -> GuardResult:
-        return self._result(list(await asyncio.gather(*(self._ajudge(n, case) for n in self._jobs(case)))))
+        return self._result(list(await asyncio.gather(*(self._ajudge(*job) for job in self._jobs(case)))))
 
     def _result(self, results: list) -> GuardResult:
         top = max(results, key=lambda r: r["score"])
