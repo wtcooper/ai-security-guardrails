@@ -24,9 +24,11 @@ class Case:
     system_prompt: Optional[str] = None   # trusted context for output checks
     user_request: Optional[str] = None    # trusted context for tool-call checks
     id: str = ""
+    history: Optional[str] = None         # untrusted: the agent's earlier steps (tool calls, tool results)
 
     def key(self) -> str:
-        blob = json.dumps([self.stage, self.text, self.system_prompt, self.user_request])
+        fields = [self.stage, self.text, self.system_prompt, self.user_request] + ([self.history] if self.history else [])
+        blob = json.dumps(fields)   # history only when set, so keys of cases without it are unchanged
         return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
 

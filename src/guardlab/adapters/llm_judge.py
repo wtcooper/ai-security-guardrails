@@ -40,6 +40,12 @@ STAGE2_SCHEMA = {"type": "json_schema", "json_schema": {"name": "verdict", "stri
     "properties": {"reasoning": {"type": "string"}, "violation": {"type": "boolean"},
                    "confidence": {"type": "number"}}}}}
 MAX_CHARS = 24000   # longer content: head + tail
+MAX_TRUSTED_CHARS = 8000   # each trusted field (system prompt, user request): head + tail
+OUTPUT_LIMIT_RETRY_TOKENS = 64   # stage 1 asks for one digit; if the model overruns a tiny budget, retry once with room
+
+
+def _hit_output_limit(text: str) -> bool:
+    return "max_tokens" in text or "output limit" in text
 
 
 def load_policy(name: str) -> tuple[dict, str]:
@@ -51,26 +57,35 @@ def load_policy(name: str) -> tuple[dict, str]:
     return yaml.safe_load(fm), body.strip()
 
 
+def _escape(text: str) -> str:
+    return json.dumps(text).replace("<", "\\u003c").replace(">", "\\u003e")
+
+
 def envelope(case: Case) -> str:
     text = case.text if len(case.text) <= MAX_CHARS else (
         case.text[:MAX_CHARS // 2] + "\n[... truncated ...]\n" + case.text[-MAX_CHARS // 2:])
-    data = json.dumps(text).replace("<", "\\u003c").replace(">", "\\u003e")
-    trusted = {k: v for k, v in (("user_request", case.user_request), ("system_prompt", case.system_prompt)) if v}
+    data = _escape(text)
+    trusted = {k: v if len(v) <= MAX_TRUSTED_CHARS else v[:MAX_TRUSTED_CHARS // 2] + " [...] " + v[-MAX_TRUSTED_CHARS // 2:]
+               for k, v in (("user_request", case.user_request), ("system_prompt", case.system_prompt)) if v}
     parts = [f"<content_type>{STAGE_LABEL.get(case.stage, case.stage)}</content_type>"]
     if trusted:
         parts.append(f"<trusted_context>{json.dumps(trusted)}</trusted_context>")
+    if case.history:   # earlier agent steps: untrusted data, shown so the judge can see where a call's details came from
+        parts.append(f"<untrusted_history>{_escape(case.history)}</untrusted_history>")
     parts.append(f"<untrusted_data>{data}</untrusted_data>")
     return "\n".join(parts) + "\n\n" + DIGIT_ASK
 
 
 class LLMJudge(BaseGuard):
     def __init__(self, id, model: str, base_url: str, api_key_env: str, mode: str = "two_stage", block_at: int = 5,
-                 review_band: list | None = None, effort: str = "none", stage2_effort: str = "low",
+                 review_band: list | None = None, stage_review_band: dict | None = None,
+                 effort: str = "none", stage2_effort: str = "low",
                  max_tokens: int = 4, timeout_s: float = 20, combine: bool = False, transport: str = "http",
                  policies: dict | None = None, extra: dict | None = None, price: dict | None = None,
                  client=None, **kw):
         super().__init__(id, model=model, base_url=base_url, mode=mode, block_at=block_at,
-                         review_band=list(review_band or [block_at, 9]), effort=effort,
+                         review_band=list(review_band or [block_at, 9]), stage_review_band=stage_review_band or {},
+                         effort=effort,
                          stage2_effort=stage2_effort, max_tokens=max_tokens, policies=policies or DEFAULT_POLICIES,
                          combine=combine, transport=transport,
                          extra=extra or {}, price=price or {}, **kw)
@@ -78,6 +93,7 @@ class LLMJudge(BaseGuard):
         self._policies = {n: load_policy(n) for ps in self.cfg["policies"].values() for n in ps}
         self._common = load_policy("common")[1]
         key = os.environ.get(api_key_env, "") if api_key_env else ""
+        self._timeout_s = timeout_s
         self._client = client or httpx.Client(base_url=base_url, timeout=timeout_s,
                                               headers={"Authorization": f"Bearer {key}"} if key else {})  # Ollama: no key
         self._pool = ThreadPoolExecutor(8)
@@ -109,6 +125,9 @@ class LLMJudge(BaseGuard):
                 continue
             if r.status_code in (403, 429) or r.status_code >= 500:
                 raise Unavailable(f"HTTP {r.status_code}: {r.text[:200]}")
+            if r.status_code == 400 and _hit_output_limit(r.text) and body["max_completion_tokens"] < OUTPUT_LIMIT_RETRY_TOKENS:
+                body["max_completion_tokens"] = OUTPUT_LIMIT_RETRY_TOKENS
+                continue
             if r.status_code != 200:
                 raise RuntimeError(f"HTTP {r.status_code}: {r.text[:300]}")
             return r.json()
@@ -132,11 +151,18 @@ class LLMJudge(BaseGuard):
             body["reasoning_effort"] = effort
         if response_format:
             body["response_format"] = response_format
-        try:
-            resp = await llm_router.acompletion(model=self.cfg["model"], messages=messages, metadata=metadata, **body)
-        except (litellm.Timeout, litellm.RateLimitError, litellm.APIConnectionError,
-                litellm.ServiceUnavailableError, litellm.InternalServerError) as e:
-            raise Unavailable(f"{type(e).__name__}: {str(e)[:200]}") from e
+        for attempt in (0, 1):
+            try:
+                resp = await llm_router.acompletion(model=self.cfg["model"], messages=messages, metadata=metadata,
+                                                    timeout=self._timeout_s, num_retries=0, **body)
+                break
+            except (litellm.Timeout, litellm.RateLimitError, litellm.APIConnectionError,
+                    litellm.ServiceUnavailableError, litellm.InternalServerError) as e:
+                raise Unavailable(f"{type(e).__name__}: {str(e)[:200]}") from e
+            except litellm.BadRequestError as e:
+                if attempt or not _hit_output_limit(str(e)) or body["max_completion_tokens"] >= OUTPUT_LIMIT_RETRY_TOKENS:
+                    raise
+                body["max_completion_tokens"] = OUTPUT_LIMIT_RETRY_TOKENS
         j = resp.model_dump()
         j["_cost_usd"] = (getattr(resp, "_hidden_params", {}) or {}).get("response_cost")   # LiteLLM's own pricing
         return j
@@ -172,7 +198,7 @@ class LLMJudge(BaseGuard):
         m = re.search(r"\d", out)
         digit = int(m.group(0)) if m else None
         res = {"policy": name, "digit": digit, "cost": self._cost(j.get("usage"), j.get("_cost_usd")), "escalated": False}
-        lo, hi = self.cfg["review_band"]
+        lo, hi = self.cfg["stage_review_band"].get(case.stage, self.cfg["review_band"])   # e.g. review every flagged action
         if self.cfg["mode"] == "two_stage" and (digit is None or lo <= digit <= hi):
             messages = messages + [{"role": "assistant", "content": out or "?"}, {"role": "user", "content": STAGE2_ASK}]
             j2 = yield (messages, self.cfg["stage2_effort"], 2048, STAGE2_SCHEMA)

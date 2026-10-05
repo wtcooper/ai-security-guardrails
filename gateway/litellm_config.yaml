@@ -58,6 +58,20 @@ guardrails:
       default_on: false
       guard_id: judge-luna-consolidated-gw
       on_unavailable: block
+  # Recommended placement (docs/guardrail-placement.md): screen everything entering inference (user turns,
+  # tool results, tool definitions) before the model reads it; check the model's tool calls before they
+  # run; skip plain-text replies (no post-call latency on chat). No MCP hooks: tool results reach the
+  # next inference anyway. pre_call (not during_call), so a block never cancels billed inference.
+  - guardrail_name: cyber-guard
+    litellm_params:
+      guardrail: guardlab.litellm_guardrail.LabGuardrail
+      mode: [pre_call, post_call]
+      default_on: false
+      guard_id: judge-luna-consolidated-gw
+      on_unavailable: allow   # fail open: judge down, erroring or over budget -> inference proceeds (logged)
+      deadline_s: 10          # total time budget per hook (normal p95 ~3 s)
+      stages: [input, conversation, tool_result, tool_definition, tool_call]
+      skip_tools: []          # exact names of vetted tools only; unknown tools are always checked
   - guardrail_name: dec-luna-emu
     litellm_params:
       guardrail: guardlab.litellm_guardrail.LabGuardrail

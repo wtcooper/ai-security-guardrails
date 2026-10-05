@@ -33,7 +33,7 @@ def call_api(prompt, options, context):
     gid = options["config"]["guard"]
     v = context.get("vars") or {}
     case = Case(v["prompt"], v.get("stage") or "input", v.get("system_prompt") or None,
-                v.get("user_request") or None, v.get("case_id", ""))
+                v.get("user_request") or None, v.get("case_id", ""), v.get("history") or None)
     g = _guard(gid)
     r, hit = get_or_run(g, case, CACHE)
     md = {"guard": gid, "version": g.version, "score": r.score, "status": r.status, "categories": r.categories,

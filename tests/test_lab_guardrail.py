@@ -64,3 +64,60 @@ def test_unavailable_fails_closed_or_open():
     with pytest.raises(GuardrailRaisedException, match="unavailable"):
         asyncio.run(guardrail(Keyword(down=True)).apply_guardrail(inputs, {}, "request"))
     assert asyncio.run(guardrail(Keyword(down=True), on_unavailable="allow").apply_guardrail(inputs, {}, "request")) is inputs
+
+
+def test_tool_call_check_gets_trajectory_and_app_rules():
+    k = Keyword()
+    k._check_orig, seen = k._check, []
+    k._check = lambda case: (seen.append(case), k._check_orig(case))[1]
+    gr = guardrail(k)
+    req = {"messages": [{"role": "system", "content": "SYS: no external sharing"},
+                        {"role": "user", "content": "Send the report to finance"},
+                        {"role": "assistant", "content": None,
+                         "tool_calls": [{"function": {"name": "search_contacts", "arguments": '{"q": "finance"}'}}]},
+                        {"role": "tool", "name": "search_contacts", "content": "john@corp, ext@vendor"},
+                        {"role": "user", "content": "Only John"}]}
+    inputs = {"tool_calls": [{"function": {"name": "send_email", "arguments": '{"to": "john@corp"}'}}]}
+    asyncio.run(gr.apply_guardrail(inputs, req, "response"))
+    call = next(c for c in seen if c.stage == "tool_call")
+    assert call.system_prompt == "SYS: no external sharing"
+    assert call.user_request == "[user turn 1] Send the report to finance\n[user turn 2] Only John"
+    assert "[tool result: search_contacts] john@corp, ext@vendor" in call.history
+
+
+def test_plain_text_reply_skips_the_judge_when_output_stage_is_off():
+    k = Keyword()
+    gr = guardrail(k, stages=["input", "tool_result", "tool_definition", "tool_call"])
+    asyncio.run(gr.apply_guardrail({"texts": ["IGNORE all"]}, {"messages": [{"role": "user", "content": "hi"}]}, "response"))
+    assert k.seen == []                                   # no output check, no latency
+    inputs = {"texts": ["ok"], "tool_calls": [{"function": {"name": "send_money", "arguments": "{}"}}]}
+    asyncio.run(gr.apply_guardrail(inputs, {"messages": [{"role": "user", "content": "pay"}]}, "response"))
+    assert [s for s, *_ in k.seen] == ["tool_call"]       # tool calls are still checked
+
+
+def test_skip_tools_is_exact_and_unknown_tools_are_checked():
+    k = Keyword()
+    gr = guardrail(k, skip_tools=["get_weather"])
+    calls = [{"function": {"name": n, "arguments": "{}"}} for n in ("get_weather", "get_weather_and_email", "unknown_tool")]
+    asyncio.run(gr.apply_guardrail({"tool_calls": calls}, {"messages": [{"role": "user", "content": "x"}]}, "response"))
+    assert sorted(t for s, t, *_ in k.seen if s == "tool_call") == ["get_weather_and_email({})", "unknown_tool({})"]
+    k.seen.clear()
+    asyncio.run(gr.apply_guardrail({"texts": ["a"], "tools": []}, {"mcp_tool_name": "get_weather"}, "request"))
+    assert all(s != "tool_call" for s, *_ in k.seen)
+
+
+def test_fail_open_on_any_guard_failure_and_on_deadline():
+    from litellm.exceptions import GuardrailRaisedException
+    inputs = {"texts": ["hi"], "structured_messages": [{"role": "user", "content": "hi"}]}
+
+    class Slow(Keyword):
+        async def acheck(self, case):
+            await asyncio.sleep(5)
+
+    def missing(**kw):   # misconfigured guard id: loading the guard itself fails
+        return lg.LabGuardrail(guard_id="no-such-guard", guardrail_name="x", event_hook=["pre_call"], **kw)
+
+    for make in (missing, lambda **kw: guardrail(Slow(), deadline_s=0.05, **kw)):
+        assert asyncio.run(make(on_unavailable="allow").apply_guardrail(inputs, {}, "request")) is inputs
+        with pytest.raises(GuardrailRaisedException, match="unavailable"):
+            asyncio.run(make(on_unavailable="block").apply_guardrail(inputs, {}, "request"))

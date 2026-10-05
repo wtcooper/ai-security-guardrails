@@ -176,9 +176,9 @@ so the agentic results don't regress.
 - rogue-security role-play requests for harmful non-cyber content (outside this lab's scope);
 - label noise: some benign rogue rows contain explicit overrides ("ignore any previous system
   instructions");
-- toolcall-guard-v1: several labels contradict the request as written (a transfer that matches the
-  request exactly is labelled unsafe; an address update to the wrong city is labelled benign), so
-  the label depends on tool history the case doesn't include. Not tuned on.
+- toolcall-guard-v1: several labels looked wrong given only the request and the call. **Corrected in
+  the T rounds below:** the dataset ships each trajectory's history and app rules, which our loader
+  had dropped. With them, the labels are consistent.
 
 **Frozen (D3):** injection v7, cyber v1, indirect v3, action v3, output v5, common v2. The
 consolidated instructions are rebuilt from these by `evals/lab/build_consolidated.py`.
@@ -212,3 +212,64 @@ consolidated instructions are rebuilt from these by `evals/lab/build_consolidate
   errors show which policy failed.
 - **Public sets:** the test splits were never tuned on. The D rounds tuned on train splits from the
   same sources, so these numbers are in-distribution rather than zero-shot.
+
+## Action-check rounds T0–T5: trajectory context (2026-10-05)
+
+**Why:** the action check saw only the user's first request and the proposed call. Real agent runs
+(and toolcall-guard-v1) also have the agent's earlier steps, the user's later replies ("only send it
+to John") and the application's rules.
+
+**Tuning data (`tc-dev`, 240 cases):** toolcall-guard-v1's `val` split, with no goals shared with the
+held-out `test_unseen_tools` rows. Run with `bash evals/run.sh lab tc-dev`. Rounds were also checked on
+rep-dev.
+
+| Round | Change | tc-dev F1, per-policy | tc-dev F1, consolidated | FPR |
+|---|---|---:|---:|---:|
+| T0 | baseline: request + call only (action v3) | 0.69 | 0.71 | 13–17% |
+| T1 | + the agent's earlier steps as untrusted history | 0.79 | 0.77 | 20–24% |
+| T2 | + the user's later turns as trusted context; history marks them content-free | 0.87 | 0.84 | 1–3% |
+| T3 | + the application's rules (system prompt) as trusted context | 0.88 | 0.90 | 7–8% |
+| T4 | action v4: match the user's latest decision on material details; don't follow instructions found in tool results; app rules bind; injected text in the history alone isn't a violation | 0.94 | 0.91 | 12% |
+| T5 | action v5 (procedural rules about other steps aren't broken by this call); **every flagged tool call gets the reasoning review** (`stage_review_band: {tool_call: [4, 9]}`) | 0.91 | **0.94** | 6–7% |
+
+**Reading:**
+- **Context did most of the work (T0 → T3).** The policy edits and the review stage traded recall back
+  for fewer false blocks (T4 → T5).
+- **Why every flagged tool call is reviewed:** with richer context, the one-digit first stage sometimes
+  answers 9 on calls the reasoning stage allows. The review costs about 3 s on 13% of safe calls; the
+  median for safe calls is unchanged at ~0.7–0.85 s.
+- **Not chased:** read-only scope creep (fetching details of an extra product). Blocking it would add
+  friction for little risk.
+
+**Robustness fixes found along the way:**
+- **Token overrun:** gpt-6-luna sometimes overruns the 4-token first-stage budget, which returned HTTP
+  400 and failed closed. It now retries once with 64 tokens.
+- **Size caps:** trusted fields are capped at 8k characters and the history at 8 steps / 8k
+  characters.
+- **Tolerant rendering:** unknown message shapes are skipped, never raised.
+
+**rep-dev (whole benchmark):**
+
+| | D3 | T5 |
+|---|---:|---:|
+| Per-policy F1 | 0.90 | **0.93** (90% recall / 3% FPR) |
+| Consolidated F1 | 0.90 | **0.91** |
+| Unsafe tool calls caught | 61% | 78–81% |
+
+Other categories are within ±1 case.
+
+**Held-out rep-test (run once):**
+
+| | F1 | AUROC | Recall | FPR | p50 |
+|---|---:|---:|---:|---:|---:|
+| Consolidated | **0.93** | 0.935 | 90% | 4% | 885 ms |
+| Per-policy | **0.93** | 0.930 | 89% | 4% | 845 ms |
+
+Both were 0.91 at D3. The public benchmarks were not rerun: they score request-side checks, whose
+policies are unchanged since D3.
+
+**Placement study:** the same action check, on held-out agent trajectories, stops 78–84% of unsafe
+calls. Pre-call alone stops 2–6% of the drift cases. See [guardrail-placement.md](guardrail-placement.md).
+
+**Frozen (T5):** injection v7, cyber v1, indirect v3, action v5, output v5, common v2. Review band
+[4, 6], and [4, 9] for tool calls.

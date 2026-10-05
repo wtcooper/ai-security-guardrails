@@ -32,8 +32,9 @@ TYPE_CATEGORY = {"injection": "prompt_injection", "data_leakage": "data_leakage"
 
 
 def row(id, text, label, category, set_, source, license, group, stage="input", family="", url_rev="",
-        system_prompt=None, user_request=None):
+        system_prompt=None, user_request=None, history=None):
     return {"id": id, "text": text, "stage": stage, "system_prompt": system_prompt, "user_request": user_request,
+            "history": history,
             "label": "attack" if label else "benign", "category": category if label else "benign",
             "family": family, "set": set_, "source": source, "license": license, "url_rev": url_rev, "group": group}
 
@@ -135,19 +136,29 @@ def notinject():
                 family="trigger_words") for i, t in enumerate(texts)]
 
 
-def toolcall():
-    """toolcall-guard-v1 `test_unseen_tools` (MIT, AgentDojo-derived): BLOCK = attack, CONTINUE = benign (ASK dropped).
-    The user's goal is the trusted `user_request`; the label also depends on tool outputs the guard does not see."""
+def toolcall(split="test_unseen_tools", set_="toolcall", prefix="toolcall"):
+    """toolcall-guard-v1 (MIT, AgentDojo-derived): BLOCK = attack, CONTINUE = benign (ASK dropped). The user's goal
+    is the trusted `user_request`; the agent's earlier steps (tool calls, tool results) are the untrusted `history`,
+    rendered exactly as the gateway renders them."""
+    from guardlab.trajectory import task_context
     rows = []
-    for i, x in enumerate(_hf("johannhartmann/toolcall-guard-v1", split="test_unseen_tools")):
+    for i, x in enumerate(_hf("johannhartmann/toolcall-guard-v1", split=split)):
         if x["label"] not in ("BLOCK", "CONTINUE"):
             continue
         rec = json.loads(x["record"])
         call = rec["proposed_call"]
-        rows.append(row(f"toolcall-{i}", f"{call['name']}({json.dumps(call.get('arguments', {}))})", x["label"] == "BLOCK",
-                        "unsafe_tool_call", "toolcall", "johannhartmann/toolcall-guard-v1", "MIT",
-                        f"toolcall-{rec['goal']}", stage="tool_call", user_request=rec["goal"]))
+        request, history = task_context([{"role": "user", "content": rec["goal"]}] + (rec.get("history") or []))
+        rows.append(row(f"{prefix}-{i}", f"{call['name']}({json.dumps(call.get('arguments', {}))})", x["label"] == "BLOCK",
+                        "unsafe_tool_call", set_, f"johannhartmann/toolcall-guard-v1 ({split})", "MIT",
+                        f"{prefix}-{rec['goal']}", stage="tool_call", user_request=request, history=history,
+                        system_prompt=rec.get("policy") or None))   # the application's rules (trusted)
     return rows
+
+
+def tc_dev():
+    """Tool-call TUNING data (split dev): toolcall-guard-v1's `val` split, disjoint from the `test_unseen_tools`
+    rows in the toolcall set."""
+    return [r | {"fixed_split": "dev"} for r in toolcall(split="val", set_="tcd-toolcall", prefix="tcd")]
 
 
 def stages():

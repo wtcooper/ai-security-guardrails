@@ -1,10 +1,10 @@
 {
  "scope": "cyber",
- "rows": 7243,
- "lab_tests_sha256": "ed8cab35c2d29926afde526a256144d3b904a255edff0a7f7e891f67f58a651f",
+ "rows": 7483,
+ "lab_tests_sha256": "2d9534054896366ccddf8445abeb754347b8a1541f22bb9263c98a030bd84abf",
  "by_split_label": {
-  "dev/attack": 892,
-  "dev/benign": 1079,
+  "dev/attack": 1046,
+  "dev/benign": 1165,
   "pool/attack": 575,
   "pool/benign": 460,
   "public/attack": 685,
@@ -57,18 +57,20 @@
   "stages/dev/benign": 43,
   "stages/test/attack": 12,
   "stages/test/benign": 10,
+  "tcd-toolcall/dev/attack": 154,
+  "tcd-toolcall/dev/benign": 86,
   "toolcall/dev/attack": 249,
   "toolcall/dev/benign": 104,
   "toolcall/test/attack": 546,
   "toolcall/test/benign": 270
  },
  "smoke": {
-  "dev": 104,
+  "dev": 107,
   "test": 105
  },
  "lite": {
   "test": 1002,
-  "dev": 1002
+  "dev": 1003
  },
  "rep": {
   "dev/attack/cyber": 30,
@@ -148,6 +150,7 @@
   "pid-xtram1: xTRam1/safe-guard-prompt-injection (train) | none declared (evaluation use) | ",
   "stages: authored (smoke_stages.yaml) | MIT | ",
   "stages: authored + gemma4:e2b replies (dev_stages.jsonl) | MIT | ",
-  "toolcall: johannhartmann/toolcall-guard-v1 | MIT | "
+  "tcd-toolcall: johannhartmann/toolcall-guard-v1 (val) | MIT | ",
+  "toolcall: johannhartmann/toolcall-guard-v1 (test_unseen_tools) | MIT | "
  ]
 }

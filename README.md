@@ -81,8 +81,8 @@ poisoning, unsafe tool calls, leakage and malicious cyber requests. See
 
 | Guard | Category | Attacks caught | Benign flagged | F1 | AUROC | p50 latency |
 |---|---|---:|---:|---:|---:|---:|
-| **judge-luna** (tuned, one call per policy) | LLM judge (gpt-6-luna) | 86% | **4%** | **0.91** | **0.923** | 690 ms |
-| **judge-luna-consolidated** (same rules, one call per side) | LLM judge (gpt-6-luna) | **88%** | 6% | **0.91** | 0.918 | 696 ms |
+| **judge-luna** (tuned, one call per policy) | LLM judge (gpt-6-luna) | 89% | **4%** | **0.93** | 0.930 | 845 ms |
+| **judge-luna-consolidated** (same rules, one call per side) | LLM judge (gpt-6-luna) | **90%** | **4%** | **0.93** | **0.935** | 885 ms |
 | safeguard-20b (judge-luna's C4 policies) | self-hosted classifier (policy-following) | 80% | 2% | 0.88 | 0.904 | 3184 ms |
 | dec-luna-emu (test double: luna behind the Decisions API format) | LLM, decision-API format | 80% | 10% | 0.85 | 0.858 | n/a* |
 | granite-guardian-8b | self-hosted classifier | 73% | 14% | 0.79 | binary | 1458 ms |
@@ -105,7 +105,8 @@ are excluded for it.
 ‡ Scored only on the 215 rows it was not trained on.
 § A content-safety model with no prompt-injection category. 8% of cases exceed its 4k context and
 are unavailable.
-Both judge rows use the frozen D3 policies; see [docs/judge.md](docs/judge.md) for the comparison.
+Both judge rows use the frozen T5 policies, whose tool-call checks see the agent's trajectory; see
+[docs/judge.md](docs/judge.md). The other guards' tool-call rows were scored without the trajectory.
 
 - **Self-hosted decision models, out of the box.** Strands Decider 2B (F1 0.64, AUROC 0.845) beats
   zero-shot Laya (0.55) but trails our fine-tuned s1-v4 and the judges. Its default 0.5 threshold
@@ -162,9 +163,11 @@ locally, second only to judge-luna. The latency (3 s p50 on a MacBook) needs a G
 - 5 rounds on a broad corpus, then 4 cyber-only rounds on the 407-case dev set (dev F1 0.875 → 0.910).
 - 3 direct-injection rounds (D1–D3) on public train splits: F1 0.72 → 0.78 per-policy, 0.74 → 0.82
   consolidated. The run-to-run noise floor is ±0.02.
-- Held-out test F1 is 0.91 for both versions. The consolidated version costs about 40% less.
-- p50 latency is about 0.7 s, below the ~1 s judge it is meant to beat. Two-stage review cut
-  latency by 40% and cost by 70%.
+- 6 tool-call rounds (T0–T5) giving the action check the agent's trajectory: the user's later turns,
+  the app's rules and earlier tool results. tc-dev F1 rose from 0.71 to 0.94 (consolidated), and
+  unsafe tool calls caught on rep-dev rose from 61% to 78–81%.
+- Held-out test F1 is 0.93 for both versions. The consolidated version costs about 40% less.
+- p50 latency is about 0.7–0.9 s per check. Every flagged tool call gets a ~3 s reasoning review.
 
 ## Install
 
@@ -290,6 +293,17 @@ guardrails:
 - **Chargeback:** the `*-gw` judges call luna through the gateway's own router with the caller's key
   metadata. LiteLLM records each pre- and post-call judge call in its spend DB against the same team
   key as the inference. Verified: [docs/chargeback.md](docs/chargeback.md).
+- **Recommended placement: the `cyber-guard` entry.** It has three parts:
+  - **Pre-call** on everything entering inference.
+  - **Post-call only when the response contains tool calls,** so plain chat replies add no post-call
+    latency.
+  - **No `during_call`,** because a block cancels the inference and LiteLLM then records $0 for it, so
+    it can't be charged back. No MCP hooks either: tool results reach the next pre-call anyway.
+  - **Fail open** (`on_unavailable: allow`, `deadline_s: 10`). If the judge is down, errors or is too
+    slow, the user still gets inference and the gateway logs a warning.
+
+  Measured in [docs/guardrail-placement.md](docs/guardrail-placement.md). Pre-call alone stops 87% of
+  injected tool output but only 2–6% of agent drift; the action check stops about 80% of drift.
 
 **Run the local gateway** (LiteLLM on :4000, master key `sk-local`, config in
 [gateway/litellm_config.yaml](gateway/litellm_config.yaml)):
@@ -315,7 +329,7 @@ src/guardlab/      guard interface, registry (guards.yaml), adapters, judge poli
                    judge/consolidated/), decision-API clients, LiteLLM guardrail
 src/s1guard/       the original System One guard (question battery on Laya / Jev), used by the s1 and dec adapters
 evals/lab/         corpus builder, promptfoo configs (lab.yaml, e2e.yaml), provider, report, leaderboard,
-                   local-model shims (shims/), consolidated-judge builder, chargeback check
+                   local-model shims (shims/), consolidated-judge builder, chargeback check, experiments/
 evals/promptfoo/   earlier s1guard isolate / app_eval / redteam configs
 experiments/       paused work: s1guard fine-tuning (s1guard_finetune/) and the guard showdown (showdown/)
 gateway/           local LiteLLM proxy config + mock-echo model
@@ -359,6 +373,12 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 
 *LLM-as-a-judge*
 - [ ] End-to-end A/B through the gateway with the chargeback (`-gw`) judges.
+- [x] Trajectory-aware action check (rounds T0–T5) and the recommended `cyber-guard` placement.
+- [ ] Red-team the judge itself with adaptive, guard-targeted attacks (cyber only). The static evasion
+  slice is saturated at 95–100%.
+- [ ] Option to redact a flagged tool result and let the agent continue, instead of blocking the request.
+- [ ] Deterministic filter for final replies: a URL allowlist for markdown links and images, plus
+  secret patterns.
 - [ ] Rules + judge hybrid: s1guard's regex detectors in front of the judge.
 
 *Evaluation hardening, from Red Hat's and guardrail-showdown's benchmarks*

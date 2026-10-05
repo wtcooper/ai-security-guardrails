@@ -55,6 +55,7 @@ guards:
     api_key_env: OPENAI_API_KEY
     mode: two_stage        # stage 1 digit (no reasoning); stage 2 (low reasoning) decides digits in review_band
     review_band: [4, 6]    # >= 7 blocks, <= 3 allows without review (tuning round 3)
+    stage_review_band: {tool_call: [4, 9]}   # review every flagged action (richer context, costlier mistakes)
     effort: none
     stage2_effort: low
     max_tokens: 8
@@ -68,6 +69,7 @@ guards:
     api_key_env: OPENAI_API_KEY
     mode: two_stage
     review_band: [4, 6]
+    stage_review_band: {tool_call: [4, 9]}   # review every flagged action (richer context, costlier mistakes)
     effort: none
     stage2_effort: low
     max_tokens: 8
@@ -88,6 +90,7 @@ guards:
     transport: litellm
     mode: two_stage
     review_band: [4, 6]
+    stage_review_band: {tool_call: [4, 9]}   # review every flagged action (richer context, costlier mistakes)
     effort: none
     stage2_effort: low
     max_tokens: 8
@@ -101,6 +104,7 @@ guards:
     transport: litellm
     mode: two_stage
     review_band: [4, 6]
+    stage_review_band: {tool_call: [4, 9]}   # review every flagged action (richer context, costlier mistakes)
     effort: none
     stage2_effort: low
     max_tokens: 8

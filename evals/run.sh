@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run the promptfoo evals.
-#   bash evals/run.sh lab <smoke-dev|smoke-test|rep-dev|rep-test|pi-dev|public|lite-dev|lite-test|dev|test> ['<guard regex>']
+#   bash evals/run.sh lab <smoke-dev|smoke-test|rep-dev|rep-test|pi-dev|tc-dev|public|lite-dev|lite-test|dev|test> ['<guard regex>']
 #                                 # guard-only comparison on the lab corpus (no gateway needed)
 #   bash evals/run.sh isolate     # s1guard through the gateway (mock-echo model), ~30s
 #   bash evals/run.sh app_eval    # single-turn A/B with gemma4:e2b + gemma4 judge (SAMPLE=20)
@@ -26,7 +26,8 @@ if [ "${1:-}" = lab ]; then
     dev|test)   filt=(--filter-metadata "split=$mode") ;;
     public)     filt=(--filter-metadata split=public) ;;   # well-known public benchmarks (pb-*), never tuned on
     pi-dev)     filt=(--filter-metadata pidev=yes) ;;        # direct-injection tuning data (public train material)
-    *) echo "usage: $0 lab smoke-dev|smoke-test|rep-dev|rep-test|pi-dev|public|lite-dev|lite-test|dev|test ['<guard regex>']" >&2; exit 2 ;;
+    tc-dev)     filt=(--filter-metadata tcdev=yes) ;;        # tool-call tuning data (toolcall-guard-v1 val split)
+    *) echo "usage: $0 lab smoke-dev|smoke-test|rep-dev|rep-test|pi-dev|tc-dev|public|lite-dev|lite-test|dev|test ['<guard regex>']" >&2; exit 2 ;;
   esac
   [ -f "$ROOT/evals/lab/data/pf/lab_tests.json" ] || "$ROOT/.venv/bin/python" "$ROOT/evals/lab/build_corpus.py"
   slug="$(echo "$guards" | tr -c 'A-Za-z0-9._-' '_' | sed 's/_*$//')"; [ "$slug" = "_" ] || [ -z "$slug" ] && slug=all
