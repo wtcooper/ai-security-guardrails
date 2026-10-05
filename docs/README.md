@@ -6,7 +6,7 @@
 | [lab.md](lab.md) | How the evaluation works: corpus, splits, run modes, scoring, adding a guard, gotchas |
 | [chargeback.md](chargeback.md) | Billing the judge guardrail's model calls to the caller's LiteLLM key (verified in the spend DB) |
 | [judge.md](judge.md) | LLM-as-a-judge guard: design, round-by-round tuning log, frozen test result |
-| [decision-apis.md](decision-apis.md) | Provider decision APIs: schemas, emulator, switching to the OpenAI Decisions API |
+| [decision-apis.md](decision-apis.md) | Decision APIs and self-hosted decision models: schemas, guards, the test double, switching to the OpenAI Decisions API |
 | [guardrail-showdown.md](guardrail-showdown.md) | Earlier head-to-head of s1guard against public encoders (rounds 1–2) |
 | [s1guard.md](s1guard.md) | The original s1guard README (fine-tuned System One decision model, paused) |
 | [training-methods.md](training-methods.md) | s1guard fine-tuning methods writeup (v1–v4) |

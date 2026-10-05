@@ -1,14 +1,14 @@
 # Guardrail lab: how the evaluation works
 
 **What the lab is:** one standardized corpus, one guard interface, and promptfoo as the runner.
-It compares four families of guard:
+It compares four categories of guard, split by whose inference it is:
 
-| Family | Example ids |
+| Category | Example ids |
 |---|---|
-| Fine-tuned decision models | `s1-v4` |
-| LLM judges | `judge-luna` |
-| Open-source classifiers | `qwen3guard-*`, `shieldstral-3b`, `granite-guardian-8b`, `safeguard-20b`, `pg2-*` |
-| Provider decision APIs | `dec-openai`, `dec-luna-emu` |
+| LLM-as-a-judge (our policies on a hosted LLM) | `judge-luna`, `judge-luna-consolidated` |
+| Hosted decision APIs (the provider's inference) | `dec-jev`, `dec-openai` (`dec-luna-emu` is a test double) |
+| Self-hosted decision models (ours; fine-tunable) | `s1-zeroshot`, `s1-v4`, `strands-decider-2b`, `clef-flash-9b` |
+| Self-hosted classifiers (fixed task) | `pg2-*`, `sentinel-v2`, `deberta-pi-v2`, `qwen3guard-*`, `shieldstral-3b`, `llama-guard4-12b`, `granite-guardian-8b`, `nemotron-cs-4b`, `safeguard-20b` |
 
 Every guard is registered in [src/guardlab/guards.yaml](../src/guardlab/guards.yaml) and implements
 `check(Case) -> GuardResult`.

@@ -30,9 +30,13 @@ providers:
   - {id: file://provider_guard.py, label: judge-flash-lite, config: {guard: judge-flash-lite}}
   - {id: file://provider_guard.py, label: dec-openai, config: {guard: dec-openai}}
   - {id: file://provider_guard.py, label: dec-luna-emu, config: {guard: dec-luna-emu}}
+  - {id: file://provider_guard.py, label: dec-jev, config: {guard: dec-jev}}
+  - {id: file://provider_guard.py, label: strands-decider-2b, config: {guard: strands-decider-2b, workers: 1}}
+  - {id: file://provider_guard.py, label: clef-flash-9b, config: {guard: clef-flash-9b, workers: 1}}
   - {id: file://provider_guard.py, label: pg2-86m, config: {guard: pg2-86m, workers: 1}}
   - {id: file://provider_guard.py, label: pg2-22m, config: {guard: pg2-22m, workers: 1}}
   - {id: file://provider_guard.py, label: sentinel-v2, config: {guard: sentinel-v2, workers: 1}}
+  - {id: file://provider_guard.py, label: deberta-pi-v2, config: {guard: deberta-pi-v2, workers: 1}}
   - {id: file://provider_guard.py, label: qwen3guard-0.6b, config: {guard: qwen3guard-0.6b, workers: 1}}
   - {id: file://provider_guard.py, label: qwen3guard-4b, config: {guard: qwen3guard-4b, workers: 1}}
   - {id: file://provider_guard.py, label: shieldstral-3b, config: {guard: shieldstral-3b, workers: 1}}

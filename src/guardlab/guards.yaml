@@ -9,7 +9,8 @@ guards:
     license: n/a
     notes: keyword patterns ("ignore previous instructions", DAN, system prompt, ...)
 
-  # ------------------------------------------------------------------ family 1: fine-tuned decision models
+  # ------------------------------------------------------------------ self-hosted decision models: open weights on our hardware (fine-tunable)
+  # Laya zero-shot and our fine-tune (s1-*), plus other open decision models answering the same question battery.
   s1-zeroshot:
     adapter: s1guard
     family: decision-model (zero-shot)
@@ -23,8 +24,26 @@ guards:
     model: ${REPO}/experiments/s1guard_finetune/models/laya-s1guard-v4
     policy: ${REPO}/experiments/s1guard_finetune/policies/laya-s1guard-v4.yaml
     trained_on: [s1guard_train]
+  strands-decider-2b:      # AWS Strands Labs; serve: bash evals/lab/shims/strands_decider.sh serve
+    adapter: decision_api
+    family: decision-model (zero-shot)
+    license: Apache-2.0
+    api: jev
+    base_url: http://127.0.0.1:8768
+    model: strands-decider-2b
+    timeout_s: 60
+    policy: ${REPO}/src/guardlab/decisions/policies/decisions.yaml
+  clef-flash-9b:           # Cloudflare Clef-flash via Ollama >= 0.35.1 (`ollama pull clef-flash:9b`, ~10 GB)
+    adapter: decision_api
+    family: decision-model (zero-shot)
+    license: Apache-2.0
+    api: jev
+    base_url: http://127.0.0.1:11434
+    model: clef-flash:9b
+    timeout_s: 120
+    policy: ${REPO}/src/guardlab/decisions/policies/decisions.yaml
 
-  # ------------------------------------------------------------------ family 2: LLM-as-a-judge
+  # ------------------------------------------------------------------ LLM-as-a-judge: our policies on a hosted LLM
   # Policies: src/guardlab/judge/policies/*.md (versioned); tuning log: docs/judge.md.
   judge-luna:
     adapter: llm_judge
@@ -141,7 +160,7 @@ guards:
     stage2_effort: ""
     max_tokens: 8
 
-  # ------------------------------------------------------------------ family 4: provider decision APIs
+  # ------------------------------------------------------------------ hosted decision APIs: someone else's inference
   # s1guard's question battery (one yes/no question per risk) answered by a hosted decision model.
   dec-openai:              # real OpenAI Decisions API: returns `unavailable` until preview access is enabled
     adapter: decision_api
@@ -160,7 +179,18 @@ guards:
     model: gpt-6-luna
     policy: ${REPO}/src/guardlab/decisions/policies/decisions.yaml
 
-  # ------------------------------------------------------------------ family 3: open-source classifiers
+  dec-jev:                 # TypeSafe Jev (hosted reference decision model) via OpenRouter; needs OPENROUTER_API_KEY
+    adapter: decision_api
+    family: decision-api
+    license: TypeSafe API (via OpenRouter)
+    api: jev
+    base_url: https://openrouter.ai
+    path: /api/v1/systemone
+    model: typesafe/jev-1.13
+    api_key_env: OPENROUTER_API_KEY
+    policy: ${REPO}/src/guardlab/decisions/policies/decisions.yaml
+
+  # ------------------------------------------------------------------ self-hosted classifiers: fixed-task guard models
   # Gated on Hugging Face: accept the model's licence, then set HF_TOKEN in .env.
   pg2-86m:
     adapter: hf_classifier
@@ -186,6 +216,15 @@ guards:
     revision: 05ff9bfd1f28
     label: jailbreak
     stages: [input, tool_result, tool_definition]
+  deberta-pi-v2:           # the reference classifier in Red Hat's and guardrail-showdown's benchmarks
+    adapter: hf_classifier
+    family: oss-classifier
+    license: Apache-2.0
+    model: RedHatAI/deberta-v3-base-prompt-injection-v2   # Red Hat-maintained copy of ProtectAI's (archived) model
+    revision: b81407f3ee3f
+    label: INJECTION
+    stages: [input, tool_result, tool_definition]
+    trained_on: [pb-jackhhao, pid-jackhhao]   # model card lists jackhhao/jailbreak-classification as training data
   qwen3guard-0.6b:
     adapter: hf_generative
     family: oss-classifier

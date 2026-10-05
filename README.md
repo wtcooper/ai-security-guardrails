@@ -27,16 +27,40 @@ and agents, and for deploying the best ones in a LiteLLM gateway. It covers cybe
 4. **One deployment path.** Any registered guard runs as a LiteLLM guardrail, so the guard you
    evaluate is the guard you deploy. The judges can bill their model calls to the caller's team key.
 
-**Guard families:**
+**Guard categories.** They are split by *whose inference it is*. Hosting a model ourselves means we
+can fine-tune it; calling someone else's API means we take the model as it is.
 
-| Family | Guards |
-|---|---|
-| **LLM-as-a-judge** (main build) | `judge-luna` (one call per policy) and `judge-luna-consolidated` (one call per side: a pre-call request check and a post-call response check). Both use gpt-6-luna with tuned policies. `*-gw` variants bill through the gateway. |
-| **Provider decision APIs** | `dec-openai` (OpenAI Decisions API, invite-only), `dec-luna-emu` (same schema, emulated), any Jev-compatible `/v1/systemone` endpoint |
-| **Open-source classifiers** | Llama Prompt Guard 2 86M/22M, Llama Guard 4 12B, Sentinel v2, Qwen3Guard 0.6B/4B, Shieldstral 3B, Granite Guardian 4.1 8B, Nemotron 3.5 Content Safety 4B, gpt-oss-safeguard 20B |
-| **Fine-tuned decision model** | `s1-v4` / `s1-zeroshot`: this repo's original System One (Laya) guard, now paused ([docs/s1guard.md](docs/s1guard.md)) |
+| Category | Whose inference | Task defined | Evaluated | Registered, not yet run |
+|---|---|---|---|---|
+| **LLM-as-a-judge** | Hosted LLM (gpt-6-luna) | In our policy prompts | `judge-luna` (one call per policy), `judge-luna-consolidated` (one pre-call and one post-call check) | — |
+| **Hosted decision APIs** | The provider's | In the questions we send | — | `dec-jev` (TypeSafe Jev via OpenRouter), `dec-openai` (OpenAI Decisions API, invite-only) |
+| **Self-hosted decision models** | Ours (Mac CPU/GPU); fine-tunable | In the questions we send | `s1-zeroshot` (Laya), `s1-v4` (our Laya fine-tune), `strands-decider-2b` (AWS) | `clef-flash-9b` (Cloudflare) |
+| **Self-hosted classifiers** | Ours; fixed task | At training time | Encoders: Prompt Guard 2 86M/22M, Sentinel v2, `deberta-pi-v2`. Generative guard models: Llama Guard 4, Qwen3Guard 0.6B/4B, Shieldstral 3B. Policy-following: Granite Guardian 4.1, Nemotron 3.5 CS, gpt-oss-safeguard 20B | — |
 
-**The judge:**
+- **What `safeguard-20b` is:** OpenAI's open-weight gpt-oss-safeguard-20b, run locally through
+  Ollama. It classifies against a policy you supply; we gave it the judge's tuned policies.
+- **What `dec-luna-emu` is:** a test double, not a decision model. It is a local server that puts
+  gpt-6-luna chat calls behind the OpenAI Decisions API request format, so the client and gateway
+  path can be tested before access arrives. Its results measure luna answering short questions.
+
+**Decision models vs classifiers.** Both are non-generative: one forward pass, a probability out,
+and similar sizes (Laya 421M, DeBERTa 184M). Red Hat files Laya next to 2019's BART-large-mnli as a
+"zero-shot classifier". The difference is *where the task is defined*:
+- **A classifier answers one fixed question learned in training.** On that task it is hard to beat:
+  in Red Hat's prompt-injection benchmark DeBERTa scored 89.0% at 54 ms on CPU, against Jev's 86.4%
+  at 348 ms.
+- **A decision model answers whatever question you send,** including context such as "is this tool
+  call what the user asked for?". That is why only the decision models and judges score our
+  tool-call and output stages.
+- **That flexibility makes it sensitive to wording.** Red Hat's tuned policy raised Laya by 17
+  points but lowered Jev by 3.7.
+- **Fine-tuning closes the gap:** `s1-v4` is a decision model trained on our labels.
+
+All categories are scored on the same corpus. They have had different amounts of tuning: the LLM
+judge went through many rounds, s1-v4 was fine-tuned, and the rest run out of the box. The results
+tables say which is which.
+
+**How the LLM judge works:**
 - **Policies:** five files in [src/guardlab/judge/policies/](src/guardlab/judge/policies/)
   (injection, cyber, indirect_injection, action, output), each in Instruction / Definitions /
   Criteria / Examples form, plus shared rules in `common.md`. The consolidated version's
@@ -55,25 +79,27 @@ poisoning, unsafe tool calls, leakage and malicious cyber requests. See
 [docs/benchmark.md](docs/benchmark.md). Each guard is scored at its own threshold. Full tables are in
 [evals/lab/leaderboard.md](evals/lab/leaderboard.md).
 
-| Guard | Family | Attacks caught | Benign flagged | F1 | AUROC | p50 latency |
+| Guard | Category | Attacks caught | Benign flagged | F1 | AUROC | p50 latency |
 |---|---|---:|---:|---:|---:|---:|
 | **judge-luna** (tuned, one call per policy) | LLM judge (gpt-6-luna) | 86% | **4%** | **0.91** | **0.923** | 690 ms |
 | **judge-luna-consolidated** (same rules, one call per side) | LLM judge (gpt-6-luna) | **88%** | 6% | **0.91** | 0.918 | 696 ms |
-| safeguard-20b (judge-luna's C4 policies) | open-weight judge (local) | 80% | 2% | 0.88 | 0.904 | 3184 ms |
-| dec-luna-emu (out of the box) | decision API (emulated) | 80% | 10% | 0.85 | 0.858 | n/a* |
-| granite-guardian-8b | OSS classifier | 73% | 14% | 0.79 | binary | 1458 ms |
-| sentinel-v2 † | OSS classifier | 70% | 17% | 0.77 | 0.849 | 137 ms |
-| nemotron-cs-4b (custom policy) | OSS classifier | 66% | 12% | 0.76 | 0.835 | 2602 ms |
-| s1-v4 (fine-tuned Laya) ‡ | decision model | 63% | 13% | 0.73 | 0.818 | 148 ms |
-| qwen3guard-0.6b / 4b | OSS classifier | 57% / 54% | 14% / 10% | 0.67 / 0.67 | 0.795 / 0.819 | 147 / 732 ms |
-| shieldstral-3b | OSS classifier | 49% | 8% | 0.63 | 0.811 | 402 ms |
-| s1-zeroshot (Laya) | decision model | 39% | 4% | 0.55 | 0.764 | 139 ms |
-| pg2-86m / pg2-22m † (Llama Prompt Guard 2) | OSS classifier | 29% / 5% | 1% / 0% | 0.45 / 0.09 | 0.885 / 0.653 | 101 / 30 ms |
-| llama-guard4-12b § (Q4_K_M, llama.cpp) | OSS classifier | 30% | 15% | 0.42 | 0.676 | 1123 ms |
+| safeguard-20b (judge-luna's C4 policies) | self-hosted classifier (policy-following) | 80% | 2% | 0.88 | 0.904 | 3184 ms |
+| dec-luna-emu (test double: luna behind the Decisions API format) | LLM, decision-API format | 80% | 10% | 0.85 | 0.858 | n/a* |
+| granite-guardian-8b | self-hosted classifier | 73% | 14% | 0.79 | binary | 1458 ms |
+| sentinel-v2 † | self-hosted classifier | 70% | 17% | 0.77 | 0.849 | 137 ms |
+| nemotron-cs-4b (custom policy) | self-hosted classifier | 66% | 12% | 0.76 | 0.835 | 2602 ms |
+| s1-v4 (fine-tuned Laya) ‡ | self-hosted decision model | 63% | 13% | 0.73 | 0.818 | 148 ms |
+| qwen3guard-0.6b / 4b | self-hosted classifier | 57% / 54% | 14% / 10% | 0.67 / 0.67 | 0.795 / 0.819 | 147 / 732 ms |
+| deberta-pi-v2 † (Red Hat's reference classifier) | self-hosted classifier | 57% | 17% | 0.67 | 0.780 | 26 ms |
+| strands-decider-2b (AWS, out of the box) | self-hosted decision model | 49% | 6% | 0.64 | 0.845 | 561 ms |
+| shieldstral-3b | self-hosted classifier | 49% | 8% | 0.63 | 0.811 | 402 ms |
+| s1-zeroshot (Laya) | self-hosted decision model | 39% | 4% | 0.55 | 0.764 | 139 ms |
+| pg2-86m / pg2-22m † (Llama Prompt Guard 2) | self-hosted classifier | 29% / 5% | 1% / 0% | 0.45 / 0.09 | 0.885 / 0.653 | 101 / 30 ms |
+| llama-guard4-12b § (Q4_K_M, llama.cpp) | self-hosted classifier | 30% | 15% | 0.42 | 0.676 | 1123 ms |
 | regex floor | — | 12% | 1% | 0.21 | 0.554 | 0 ms |
 
-\* The emulator answers via gpt-6-luna chat calls. The real Decisions API measured about 105 ms for
-3 questions.
+\* The test double answers via gpt-6-luna chat calls, so its latency says nothing about a real
+decision API. The real OpenAI Decisions API measured about 105 ms for 3 questions.
 † Screens user-side text only (input, tool results, tool definitions). Tool-call and output cases
 are excluded for it.
 ‡ Scored only on the 215 rows it was not trained on.
@@ -81,17 +107,30 @@ are excluded for it.
 are unavailable.
 Both judge rows use the frozen D3 policies; see [docs/judge.md](docs/judge.md) for the comparison.
 
+- **Self-hosted decision models, out of the box.** Strands Decider 2B (F1 0.64, AUROC 0.845) beats
+  zero-shot Laya (0.55) but trails our fine-tuned s1-v4 and the judges. Its default 0.5 threshold
+  is conservative.
+  - Strongest on malicious cyber requests (87%) and tool poisoning (72%).
+  - Weakest on indirect injection (25%) and output leaks (0%).
+  - s1-zeroshot asks a slightly different set of questions (laya-base.yaml), so treat that gap as
+    indicative.
+- **The reference classifier is narrow.** deberta-pi-v2 catches 94% of direct injection but only
+  42% of indirect injection, and it flags 41% of NotInject's benign prompts.
+
 ### Well-known public benchmarks (binary F1, run independently; test splits never tuned on)
 
 | Guard | BIPIA (indirect) | deepset | jackhhao | rogue-security | xTRam1 |
 |---|---:|---:|---:|---:|---:|
-| judge-luna (D3) | **0.961** | 0.519 | 0.935 | 0.694 | **0.890** |
+| judge-luna (D3) | **0.961** | 0.519 | 0.935 | 0.694 | 0.890 |
 | judge-luna-consolidated (D3) | 0.953 | 0.537 | 0.947 | 0.725 | 0.875 |
 | judge-luna (C4, before the D rounds) | 0.966 | 0.462 | 0.943 | 0.649 | 0.714 |
 | dec-luna-emu | 0.556 | **0.588** | 0.947 | **0.805** | 0.800 |
+| deberta-pi-v2 | 0.378 | 0.537 | — ¶ | 0.659 | **0.924** |
 | pg2-86m | 0.020 | 0.235 | 0.967 | 0.664 | 0.711 |
 | s1-zeroshot | 0.139 | 0.257 | **0.982** | 0.518 | 0.835 |
 | regex | 0.029 | 0.125 | 0.667 | 0.323 | 0.385 |
+
+¶ Excluded: deberta-pi-v2 was trained on jackhhao, per its model card.
 
 **What this shows:**
 - **Indirect injection:** the luna judges dominate (BIPIA 0.95–0.96).
@@ -99,9 +138,12 @@ Both judge rows use the frozen D3 policies; see [docs/judge.md](docs/judge.md) f
   mean F1 from 0.747 to 0.800 (consolidated 0.807). The judge still trails on deepset and
   rogue-security, whose remaining misses are mostly attacks only against an absent system prompt,
   or non-cyber role-play outside this lab's scope.
+- **The reference classifier wins only on its own task.** deberta-pi-v2 is the best direct-injection
+  detector on xTRam1 (0.924) and the fastest guard (26 ms). But it misses indirect injection (BIPIA
+  0.378) and flags 17% of our benign agentic content. This matches Red Hat's finding that fixed
+  classifiers win on the task they were trained for.
 
-Not run yet (deferred to protect the laptop; everything is ready to run later):
-- the public benchmarks for the slower local guards (including Llama Guard 4).
+Guards and runs not yet done are listed in the [roadmap](#status-and-roadmap).
 
 **End to end through the LiteLLM gateway:** 45 cyber smoke cases, target gemma4:e2b, gpt-6-luna grader.
 
@@ -132,8 +174,8 @@ locally, second only to judge-luna. The latency (3 s p50 on a MacBook) needs a G
 - A checkout of [ai-security-evals](https://github.com/wtcooper/ai-security-evals) next to this repo,
   or `EVALS_REPO=<path>`. The corpus builder reads its control-isolate corpus.
 - An OpenAI API key with gpt-6-luna access, for the judges, the decisions emulator and the e2e grader.
-- Optional, for local guards and the gateway: [Ollama](https://ollama.com), llama.cpp
-  (`brew install llama.cpp`) and Docker.
+- Optional, for local guards and the gateway: [Ollama](https://ollama.com) 0.35.1 or later (it
+  serves decision models), llama.cpp (`brew install llama.cpp`) and Docker.
 
 ```bash
 git clone git@github.com:wtcooper/ai-security-guardrails.git
@@ -151,6 +193,7 @@ uv run python evals/lab/build_corpus.py             # builds evals/lab/data/ (gi
 | Variable | Needed for |
 |---|---|
 | `OPENAI_API_KEY` | Required. The luna judges, `dec-luna-emu`, `dec-openai`, the e2e grader and the gateway's `gpt-6-luna` model. |
+| `OPENROUTER_API_KEY` | Optional. `dec-jev`: TypeSafe Jev, the hosted reference decision model, via OpenRouter. |
 | `HF_TOKEN` | Gated Hugging Face models: Llama Prompt Guard 2, Llama Guard 4 and Sentinel v2. Accept each licence on its model page first. |
 | `EVALS_REPO` | Optional. The path to ai-security-evals, if it isn't a sibling directory. |
 | `S1GUARD_BACKEND`, `TYPESAFE_API_KEY`, `S1GUARD_URL` | Optional. The s1guard and decision-model backends: `laya` (local), `jev`, or `http` (any `/v1/systemone` server). |
@@ -212,6 +255,9 @@ uv run python evals/lab/report.py <test files> --dev <dev files> --out evals/lab
 | `safeguard-20b` | `ollama pull gpt-oss-safeguard:20b` |
 | `nemotron-cs-4b` | Needs its own venv and an HTTP shim on :8766. The commands are in [evals/lab/shims/nemotron_server.py](evals/lab/shims/nemotron_server.py). |
 | `llama-guard4-12b` | Run `bash evals/lab/shims/llama_guard4.sh setup` once (24 GB download, quantized to 6.4 GB), then `... serve` (:8767). |
+| `deberta-pi-v2` | `uv sync --all-extras`; loads in-process (CPU-fast). |
+| `strands-decider-2b` | Run `bash evals/lab/shims/strands_decider.sh setup` once, then `... serve` (:8768, about 5 GB). Runs in its own `uvx` environment. |
+| `clef-flash-9b` | Ollama 0.35.1 or later; `ollama pull clef-flash:9b` (about 10 GB). |
 | `dec-luna-emu` | `uv run python -m guardlab.decisions.mock_server --port 8765 --upstream luna` |
 | `s1-zeroshot`, `s1-v4` | The `laya` extra. `s1-v4` also needs the fine-tuned checkpoint from `experiments/s1guard_finetune/`, which isn't committed. |
 
@@ -276,17 +322,58 @@ gateway/           local LiteLLM proxy config + mock-echo model
 docs/              lab guide, judge tuning log, decision APIs, research notes (index: docs/README.md)
 ```
 
-## Status
+## Status and roadmap
 
-**Done:** the lab harness, the cyber corpus, the tuned luna judge, the decision-API client and
-emulator, ten open-source guard models, gateway integration with judge chargeback, and 49 offline tests.
+**Done:**
+- the lab harness and cyber corpus;
+- the tuned luna judge, in two versions;
+- the decision-API client and its test double;
+- self-hosted classifiers and decision models;
+- gateway integration with judge chargeback;
+- 49 offline tests.
 
-**Waiting on keys or access:**
-- the OpenAI Decisions API (currently 403);
-- a non-OpenAI hosted decision model (Cloudflare Clef).
+**Roadmap** (each item is registered or scripted unless noted; runs are deferred to keep laptop load low):
 
-**Deferred, ready to run:**
-- the public benchmarks for the slower local guards;
-- the e2e A/B with the gateway-billed judges.
+*Hosted decision APIs*
+- [ ] `dec-jev`: add `OPENROUTER_API_KEY`, then run smoke, rep-dev/rep-test and public. Jev is the
+  reference decision model, and the most robust to injected text in independent tests.
+- [ ] `dec-openai`: rerun once OpenAI Decisions API access is granted (currently 403), then retire
+  `dec-luna-emu` from the results.
+- [ ] Optional: Perplexity's Decisions API, and Cloudflare Clef hosted on Workers AI (needs an account
+  and a small path adapter).
+
+*Self-hosted decision models*
+- [ ] `clef-flash-9b`: pulled; run rep-dev/rep-test on its own (about 10 GB).
+- [ ] `strands-decider-2b` on the public benchmarks (about 13 minutes at 2 requests per second).
+- [ ] Kev-4B and Laya GGUF via llama.cpp. These need llama.cpp build b11371 or later; Homebrew
+  stable is older.
+- [ ] Intern-Decision-4B (not registered): its engine targets CUDA, and the Apple GPU is untested.
+- [ ] Definition sensitivity: run each decision model with the stock questions and with the
+  judge's tuned policy text as question instructions.
+- [ ] Fine-tune Strands Decider 2B on our dev split (its recipe is published) and compare with s1-v4.
+
+*Self-hosted classifiers*
+- [ ] Public benchmarks for the slower local guards: Llama Guard 4, Granite Guardian, Nemotron,
+  safeguard-20b, Qwen3Guard and Shieldstral.
+- [ ] Watch list: Fastino GLiGuard-300M.
+
+*LLM-as-a-judge*
+- [ ] End-to-end A/B through the gateway with the chargeback (`-gw`) judges.
+- [ ] Rules + judge hybrid: s1guard's regex detectors in front of the judge.
+
+*Evaluation hardening, from Red Hat's and guardrail-showdown's benchmarks*
+- [ ] Bootstrap 95% confidence intervals in the report. About 400 cases per split gives roughly
+  ±0.03 F1.
+- [ ] A "runs on" column (Mac CPU, Mac GPU, OpenAI API, hosted API) and a network baseline, so
+  latencies are comparable.
+- [ ] Audit `trained_on` for every guard against our sets. For example, Sentinel v2 and the
+  pb-rogue benchmark come from the same publisher.
+- [ ] An audited list of mislabelled public rows, reported with and without them.
+- [ ] Results by input length (DeBERTa reads 512 tokens per window; Llama Guard 4 fails past 4k)
+  and by language.
+
+*At work*
+- [ ] A `gateway_guardrail` adapter, to score Bedrock Guardrails, Model Armor, Prisma AIRS and Lakera
+  on the same corpus through LiteLLM's `/guardrails/apply_guardrail`.
 
 **More documentation:** [docs/README.md](docs/README.md).

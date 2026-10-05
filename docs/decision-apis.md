@@ -1,8 +1,8 @@
-# Provider decision APIs (System One style)
+# Decision APIs and decision models (System One style)
 
 A decision-API guard uses s1guard's question battery: one yes/no question per risk, batched per
 stage, from [decisions.yaml](../src/guardlab/decisions/policies/decisions.yaml). A hosted decision
-model answers it instead of local Laya. This measures the decision model **out of the box**: every
+API or a self-hosted decision model answers it instead of local Laya. This measures the decision model **out of the box**: every
 question is thresholded at 0.5, with no regex detectors and no tuning. Calibrate a threshold per
 backend on the lab dev split before deploying.
 
@@ -25,8 +25,14 @@ backend on the lab dev split before deploying.
 | id | Backend | Status (2026-10-04) |
 |---|---|---|
 | `dec-openai` | OpenAI `/v1/decisions` with your key | Returns `unavailable`: HTTP 403 "Decision API is not enabled for this user" (invite-only preview) |
-| `dec-luna-emu` | Local emulator, same schema, answered by gpt-6-luna | Live. Exercises the adapter, thresholds and gateway path today |
-| *(Jev family)* | `JevHTTPBackend` (TypeSafe, OpenRouter, Cloudflare `unwrap: result`, laya-serve) | Add a registry entry once a key exists |
+| `dec-luna-emu` | Local emulator, same schema, answered by gpt-6-luna | Live. A test double for the adapter, thresholds and gateway path, not a decision model |
+| `dec-jev` | TypeSafe Jev via OpenRouter `/api/v1/systemone` | Registered; needs `OPENROUTER_API_KEY` |
+| `strands-decider-2b` | AWS Strands Decider 2B, self-hosted (`evals/lab/shims/strands_decider.sh serve`, :8768) | Evaluated (see the README) |
+| `clef-flash-9b` | Cloudflare Clef-flash, self-hosted via Ollama ≥ 0.35.1 `/v1/systemone` | Pulled and registered; not run yet |
+
+The Jev-family backend (`JevHTTPBackend`) also covers TypeSafe directly, Cloudflare Workers AI
+(`unwrap: result`) and `laya[serve]`. Ollama 0.35.1+ and llama.cpp (b11371+) serve open decision
+models on the same `/v1/systemone` path, field for field.
 
 **The emulator** ([mock_server.py](../src/guardlab/decisions/mock_server.py)):
 - Answers all of a request's questions in **one** gpt-6-luna call: reasoning off, structured output,
