@@ -72,6 +72,16 @@ guardrails:
       deadline_s: 10          # total time budget per hook (normal p95 ~3 s)
       stages: [input, conversation, tool_result, tool_definition, tool_call]
       skip_tools: []          # exact names of vetted tools only; unknown tools are always checked
+  # Same guard, pre-call only: the agent-loop eval's middle arm (isolates what post-call adds).
+  - guardrail_name: cyber-guard-pre
+    litellm_params:
+      guardrail: guardlab.litellm_guardrail.LabGuardrail
+      mode: [pre_call]
+      default_on: false
+      guard_id: judge-luna-consolidated-gw
+      on_unavailable: allow
+      deadline_s: 10
+      stages: [input, conversation, tool_result, tool_definition]
   - guardrail_name: dec-luna-emu
     litellm_params:
       guardrail: guardlab.litellm_guardrail.LabGuardrail

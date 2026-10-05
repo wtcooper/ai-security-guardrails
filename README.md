@@ -19,11 +19,15 @@ and agents, and for deploying the best ones in a LiteLLM gateway. It covers cybe
    See [docs/benchmark.md](docs/benchmark.md).
 2. **One guard interface.** Every guard implements `check(Case) -> GuardResult` (blocked, score,
    status, latency, cost) and is registered in [src/guardlab/guards.yaml](src/guardlab/guards.yaml).
-   Timeouts and errors are reported separately and fail closed.
-3. **One runner.** promptfoo runs any set of guards over a slice of the corpus
-   ([evals/run.sh](evals/run.sh)), with a per-guard result cache.
-   [evals/lab/report.py](evals/lab/report.py) produces the leaderboard: recall, false-positive rate,
-   F1, AUROC, latency and cost.
+   Timeouts and errors are reported separately. They count as blocks in evaluations, while the
+   recommended gateway entry fails open.
+3. **Two runners.**
+   - **Single-turn checks:** promptfoo runs any set of guards over a slice of the corpus
+     ([evals/run.sh](evals/run.sh)), with a per-guard result cache.
+     [evals/lab/report.py](evals/lab/report.py) produces the leaderboard: recall, false-positive rate,
+     F1, AUROC, latency and cost.
+   - **Agent loops:** vanilla Inspect AgentDojo and AgentThreatBench run through the gateway with and
+     without guardrails ([evals/agent/](evals/agent/)). They measure attack success and task utility.
 4. **One deployment path.** Any registered guard runs as a LiteLLM guardrail, so the guard you
    evaluate is the guard you deploy. The judges can bill their model calls to the caller's team key.
 
@@ -146,7 +150,55 @@ Both judge rows use the frozen T5 policies, whose tool-call checks see the agent
 
 Guards and runs not yet done are listed in the [roadmap](#status-and-roadmap).
 
-**End to end through the LiteLLM gateway:** 45 cyber smoke cases, target gemma4:e2b, gpt-6-luna grader.
+### Agent loops through the gateway (AgentDojo + AgentThreatBench, 2026-10-05)
+
+Setup:
+- **Agent:** gpt-6-luna, running vanilla Inspect tasks with their own scorers.
+- **Arms:** three, identical except for guardrails (see [docs/agent-eval.md](docs/agent-eval.md)).
+- **Wiring:** every one of the 1,965 model requests ran exactly its arm's guardrails, with 0 checks
+  failing open and 0 rate limits.
+
+| Benchmark | Arm | Attack success | Utility | Agent run p50 |
+|---|---|---:|---:|---:|
+| AgentDojo, 96 attacks | no guardrail | 0% | 74% | 17.3 s |
+| | pre-call only | 0% | 6% | 3.6 s |
+| | cyber-guard | 0% | 6% | 4.7 s |
+| AgentDojo, 96 benign tasks | no guardrail | — | **81%** | 15.7 s |
+| | pre-call only | — | 65% | 6.4 s |
+| | cyber-guard | — | 65% | 8.1 s |
+| AgentThreatBench, 24 | no guardrail | 0% | 79% | 12.4 s |
+| | pre-call only | 0% | 12% | 4.1 s |
+| | cyber-guard | 0% | 21% | 6.7 s |
+
+**Reading:**
+- **gpt-6-luna resisted every attack on its own.** In our sample it ignored all 96 of AgentDojo's
+  default injections and all 24 AgentThreatBench attacks. With nothing to stop, the guardrails show no
+  security gain on these benchmarks with this model.
+- **The guard detects the injections, but blocking costs the task.** Pre-call blocked the injected tool
+  result in 94–96 of 96 attack runs. Blocking the whole request also ends the user's legitimate task, so
+  utility under attack fell from 74% to 6%.
+- **False blocks on benign tasks cost 16 points** (81% → 65%). The main cause is instructions the user
+  explicitly delegated ("do the tasks on my TODO list at <url>", "details are in Bob's message"). The
+  pre-call check sees those tool results without the user's request, so they look like injections.
+- **Post-call added 4 false blocks on benign tool calls** and caught nothing extra, because pre-call
+  stopped every attack first.
+
+**Next:**
+1. Pass the user's request to tool-result checks, so delegated instructions aren't flagged.
+2. Add an option to redact a flagged tool result instead of blocking, so the agent can finish the task.
+3. Rerun with stronger attacks (AgentDojo's other attack types, the AISI extension) and/or a weaker
+   agent model, to measure the security gain where the model alone fails.
+
+**Bugs this run found, now fixed:**
+- **Tool definitions were re-judged on every agent turn.** Unrelated, concurrent agent runs also missed
+  the cache together at start-up. Together these exhausted the 2M tokens-per-minute quota, and the guard
+  failed open on 16,659 checks. Identical checks are now judged once, using a verdict cache plus a
+  shared in-flight check.
+- **The audit missed those fail-opens at first.** Every fail-open now logs one marker, and the summary
+  flags any run that has them.
+
+**Single-turn end to end through the LiteLLM gateway:** 45 cyber smoke cases, target gemma4:e2b,
+gpt-6-luna grader.
 
 | Arm | Attack success | Benign requests blocked by the guard | p50 |
 |---|---:|---:|---:|
@@ -242,6 +294,14 @@ uv run python evals/lab/report.py <results.json> --errors judge-luna            
 uv run python evals/lab/report.py <test files> --dev <dev files> --out evals/lab/leaderboard.md
 ```
 
+**Agent-loop eval:** vanilla Inspect AgentDojo and AgentThreatBench through the gateway, with three arms:
+no guardrail, pre-call only, and `cyber-guard`. A wiring check must pass first, and every request is
+audited. See [docs/agent-eval.md](docs/agent-eval.md).
+
+```bash
+bash evals/agent/run.sh setup && bash evals/agent/run.sh smoke    # then: bash evals/agent/run.sh full
+```
+
 **Tune the judge:**
 1. Run `rep-dev` (and `pi-dev` for direct injection), then read `report.py --errors`.
 2. Edit a policy in `src/guardlab/judge/policies/` and bump its `version`.
@@ -330,6 +390,8 @@ src/guardlab/      guard interface, registry (guards.yaml), adapters, judge poli
 src/s1guard/       the original System One guard (question battery on Laya / Jev), used by the s1 and dec adapters
 evals/lab/         corpus builder, promptfoo configs (lab.yaml, e2e.yaml), provider, report, leaderboard,
                    local-model shims (shims/), consolidated-judge builder, chargeback check, experiments/
+evals/agent/       agent-loop eval: shim (arm guardrails, key, block -> refusal), wiring preflight,
+                   Inspect driver, summary
 evals/promptfoo/   earlier s1guard isolate / app_eval / redteam configs
 experiments/       paused work: s1guard fine-tuning (s1guard_finetune/) and the guard showdown (showdown/)
 gateway/           local LiteLLM proxy config + mock-echo model
@@ -340,11 +402,14 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 
 **Done:**
 - the lab harness and cyber corpus;
-- the tuned luna judge, in two versions;
+- the tuned luna judge, in two versions, with a trajectory-aware action check;
 - the decision-API client and its test double;
 - self-hosted classifiers and decision models;
 - gateway integration with judge chargeback;
-- 49 offline tests.
+- the placement study and the recommended `cyber-guard` entry: pre-call, plus post-call on tool calls,
+  failing open;
+- the agent-loop eval with three arms (no guardrail, pre-call only, `cyber-guard`);
+- 66 offline tests.
 
 **Roadmap** (each item is registered or scripted unless noted; runs are deferred to keep laptop load low):
 
@@ -372,11 +437,22 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 - [ ] Watch list: Fastino GLiGuard-300M.
 
 *LLM-as-a-judge*
-- [ ] End-to-end A/B through the gateway with the chargeback (`-gw`) judges.
+- [x] Agent-loop A/B through the gateway with the chargeback (`-gw`) judge: [docs/agent-eval.md](docs/agent-eval.md).
+- [ ] Check long tool results in windows. Content over 24k characters is currently checked head and
+  tail only, so an injection in the middle of a long page is never seen.
+- [ ] Alert on `guard failed` in the gateway log, and give the judge its own rate-limit budget. Under
+  quota pressure it fails open.
+- [ ] Test post-call on streamed responses that contain tool calls.
+- [ ] CodeIPI (`ipi_coding_agent`): the coding-agent view; probably needs Docker.
 - [x] Trajectory-aware action check (rounds T0–T5) and the recommended `cyber-guard` placement.
 - [ ] Red-team the judge itself with adaptive, guard-targeted attacks (cyber only). The static evasion
   slice is saturated at 95–100%.
+- [ ] Pass the user's request to tool-result checks, so instructions the user delegated ("do the tasks on
+  my TODO list") aren't flagged. This was the main false block in the agent loop.
 - [ ] Option to redact a flagged tool result and let the agent continue, instead of blocking the request.
+  In the agent loop, blocking cut utility under attack from 74% to 6%.
+- [ ] Agent-loop rerun with stronger attacks or a weaker agent model. gpt-6-luna alone resisted the
+  default attacks.
 - [ ] Deterministic filter for final replies: a URL allowlist for markdown links and images, plus
   secret patterns.
 - [ ] Rules + judge hybrid: s1guard's regex detectors in front of the judge.

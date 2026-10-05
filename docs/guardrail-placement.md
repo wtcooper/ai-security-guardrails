@@ -91,6 +91,13 @@ verified live with a judge over its budget and with a missing guard ID: both req
 model's answer. Judge calls on the gateway path have their own timeout and no router retries, so an
 outage can't stall inference beyond the budget.
 
+**Give the judge its own rate-limit budget.** The judge shares the inference deployment's quota. In the
+first full agent-loop run, re-judging every tool definition on every turn exhausted gpt-6-luna's 2M
+tokens-per-minute limit, and the guard failed open on 16,659 checks. Identical checks are now judged
+once (an LRU verdict cache), which removes that load. At enterprise scale, though, a burst of inference
+traffic can still rate-limit the judge into failing open. Give it a separate deployment or quota, and
+alert on `guard failed` in the gateway log.
+
 **What pre-call checks:** only new messages. That means the new user turn, new tool results and tool
 definitions, so each step of an agent loop is screened once.
 

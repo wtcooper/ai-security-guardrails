@@ -121,3 +121,45 @@ def test_fail_open_on_any_guard_failure_and_on_deadline():
         assert asyncio.run(make(on_unavailable="allow").apply_guardrail(inputs, {}, "request")) is inputs
         with pytest.raises(GuardrailRaisedException, match="unavailable"):
             asyncio.run(make(on_unavailable="block").apply_guardrail(inputs, {}, "request"))
+
+
+def test_identical_checks_are_judged_once_across_agent_turns():
+    k = Keyword()
+    gr = guardrail(k)
+    tools = [{"type": "function", "function": {"name": f"t{i}", "description": f"tool {i}"}} for i in range(30)]
+    for turn in range(3):   # an agent re-sends the same 30 tool definitions every turn
+        msgs = [{"role": "user", "content": "do it"}, {"role": "tool", "content": f"result {turn}"}]
+        asyncio.run(gr.apply_guardrail({"structured_messages": msgs, "tools": tools + tools[:2]}, {}, "request"))
+    defs = [t for s, t, *_ in k.seen if s == "tool_definition"]
+    assert len(defs) == 30                                    # each definition judged once, duplicates included
+    assert len([t for s, t, *_ in k.seen if s == "tool_result"]) == 3   # new content is still always judged
+
+
+def test_failed_checks_are_not_cached():
+    k = Keyword(down=True)
+    gr = guardrail(k, on_unavailable="allow")
+    inputs = {"texts": ["hi"], "structured_messages": [{"role": "user", "content": "hi"}]}
+    asyncio.run(gr.apply_guardrail(inputs, {}, "request"))
+    k.down = False
+    asyncio.run(gr.apply_guardrail(inputs, {}, "request"))
+    assert len(k.seen) == 3 and not gr._verdicts == {}       # 2 attempts while down (one retry), then judged and cached
+
+
+def test_concurrent_requests_share_one_check_per_identical_case():
+    calls = []
+
+    class SlowKeyword(Keyword):
+        async def acheck(self, case):
+            calls.append(case.text)
+            await asyncio.sleep(0.05)       # still running when the other requests arrive
+            return GuardResult(blocked=False, score=0.0)
+
+    gr = guardrail(SlowKeyword())
+    tools = [{"type": "function", "function": {"name": f"t{i}", "description": f"tool {i}"}} for i in range(20)]
+
+    async def burst():
+        reqs = [{"structured_messages": [{"role": "user", "content": f"task {n}"}], "tools": tools} for n in range(10)]
+        await asyncio.gather(*(gr.apply_guardrail(r, {}, "request") for r in reqs))
+
+    asyncio.run(burst())
+    assert len(calls) == 20 + 10          # 20 tool definitions judged once in total, plus each distinct user turn

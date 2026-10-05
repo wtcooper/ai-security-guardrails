@@ -25,6 +25,7 @@ key (chargeback; router calls skip guardrails, so no recursion); other guards ca
 
 import asyncio
 import json
+from collections import OrderedDict
 from typing import Literal, Optional
 
 from litellm._logging import verbose_proxy_logger
@@ -38,6 +39,8 @@ from s1guard.guard import (CONVERSATION_TURNS, _new_messages, last_user_message,
 from .registry import load_guard
 from .trajectory import task_context
 from .types import CALLER, Case
+
+VERDICT_CACHE_SIZE = 4096   # identical checks (e.g. the same tool definitions sent on every agent turn) are judged once
 
 
 def _tool_name(tc) -> str:
@@ -90,6 +93,8 @@ class LabGuardrail(CustomGuardrail):
         self.stages = frozenset(stages) if stages else None          # None: every stage the guard supports
         self.skip_tools = frozenset(skip_tools or ())                # exact names only; never inferred
         self._guard = None
+        self._verdicts: OrderedDict = OrderedDict()                   # case key -> ok verdict (LRU)
+        self._inflight: dict = {}                                     # case key -> running check (single-flight)
 
     @property
     def guard(self):
@@ -114,8 +119,12 @@ class LabGuardrail(CustomGuardrail):
         down = [(c, r) for c, r in zip(cases, results) if r.status in ("unavailable", "error")]
         if down and self.on_unavailable == "block":
             blocks += down
-        for c, r in blocks + down:
-            verbose_proxy_logger.warning("%s %s %s %s: %s", self.guard_id, input_type, c.stage, r.status, r.reason)
+        for c, r in down:   # one marker for every fail-open/fail-closed path, so audits can count them
+            verbose_proxy_logger.warning("%s %s: guard failed on %s (%s; on_unavailable=%s): %s", self.guard_id,
+                                         input_type, c.stage, r.status, self.on_unavailable, r.reason[:200])
+        for c, r in blocks:
+            if r.status == "ok":
+                verbose_proxy_logger.warning("%s %s %s blocked: %s", self.guard_id, input_type, c.stage, r.reason)
         if blocks:
             reason = "; ".join(f"{c.stage}: {r.reason if r.status == 'ok' else 'unavailable (' + r.reason[:80] + ')'}"
                                for c, r in blocks)
@@ -133,6 +142,26 @@ class LabGuardrail(CustomGuardrail):
         caller["tags"] = [f"guardrail_stage:{'pre_call' if input_type == 'request' else 'post_call'}"]
         token = CALLER.set(caller)   # read by guards that bill their model calls to the caller's key
         try:
-            return cases, await asyncio.gather(*(guard.acheck(c) for c in cases))
+            return cases, await asyncio.gather(*(self._verdict(guard, c) for c in cases))
         finally:
             CALLER.reset(token)
+
+    async def _verdict(self, guard, case):
+        """Cached verdict, or the result of the one check already running for an identical case (so concurrent
+        agent turns sending the same tool definitions trigger one judge call, not one each)."""
+        k = case.key()
+        if k in self._verdicts:
+            self._verdicts.move_to_end(k)
+            return self._verdicts[k]
+        task = self._inflight.get(k)
+        if task is None:
+            task = self._inflight[k] = asyncio.ensure_future(guard.acheck(case))
+            task.add_done_callback(lambda t, k=k: self._settle(k, t))
+        return await asyncio.shield(task)   # one request's deadline must not cancel the shared check
+
+    def _settle(self, k, task) -> None:
+        self._inflight.pop(k, None)
+        if not task.cancelled() and task.exception() is None and task.result().status == "ok":
+            self._verdicts[k] = task.result()
+            if len(self._verdicts) > VERDICT_CACHE_SIZE:
+                self._verdicts.popitem(last=False)

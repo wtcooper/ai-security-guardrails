@@ -15,3 +15,4 @@ evals/lab/.cache/
 evals/lab/data/*
 !evals/lab/data/manifest.json
 .venv-nemotron/
+.venv-inspect/
