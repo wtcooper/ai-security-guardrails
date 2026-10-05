@@ -253,6 +253,33 @@ def pb_bipia():
     return [r | {"id": "pb-" + r["id"], "set": "pb-bipia", "group": "pb-" + r["group"], "fixed_split": "public"} for r in bipia()]
 
 
+def pi_dev():
+    """Direct-injection TUNING data (split dev) from the public benchmarks' training material; their public
+    test samples stay held out. deepset/xTRam1/jackhhao use their train splits; rogue-security has only a
+    test split, so this takes a sample disjoint from the 400 public test cases."""
+    rows = []
+    def take(set_, items, n, source, license):
+        items = list(items)
+        rng = random.Random(set_)
+        att = [x for x in items if x[1]]
+        ben = [x for x in items if not x[1]]
+        k = min(len(att), round(n * len(att) / len(items)))
+        pick = rng.sample(att, k) + rng.sample(ben, min(len(ben), n - k))
+        rows.extend(row(f"{set_}-{i}", t, a, "prompt_injection", set_, source, license, f"{set_}-{i}") | {"fixed_split": "dev"}
+                    for i, (t, a) in enumerate(pick))
+    take("pid-deepset", ((x["text"], x["label"] == 1) for x in _hf_rev("deepset/prompt-injections", "4f61ecb038e9", "train")),
+         150, "deepset/prompt-injections (train)", "Apache-2.0")
+    take("pid-xtram1", ((x["text"], x["label"] == 1) for x in _hf_rev("xTRam1/safe-guard-prompt-injection", "a3a877d608f3", "train")),
+         150, "xTRam1/safe-guard-prompt-injection (train)", "none declared (evaluation use)")
+    take("pid-jackhhao", ((x["prompt"], x["type"] == "jailbreak") for x in _hf_rev("jackhhao/jailbreak-classification", "2f2ceeb39658", "train")),
+         100, "jackhhao/jailbreak-classification (train)", "Apache-2.0")
+    test_texts = {r["text"] for r in pb_rogue()}
+    take("pid-rogue", ((x["text"], x["label"] == "jailbreak") for x in _hf_rev("rogue-security/prompt-injections-benchmark", "9ef1aa46a7e5", "test")
+                       if x["text"] not in test_texts), 150, "rogue-security/prompt-injections-benchmark (disjoint from public sample)",
+         "CC-BY-NC-4.0 (evaluation only)")
+    return rows
+
+
 PUBLIC = {"pb-deepset": pb_deepset, "pb-jackhhao": pb_jackhhao, "pb-xtram1": pb_xtram1, "pb-rogue": pb_rogue,
           "pb-bipia": pb_bipia}
 
@@ -272,7 +299,7 @@ def evasion(rows, n_per_split=60):
     out = []
     for split in ("dev", "test"):
         src = sorted((r for r in rows if r["split"] == split and r["label"] == "attack" and r["stage"] == "input"
-                      and r["category"] == "prompt_injection"), key=lambda r: r["id"])
+                      and r["category"] == "prompt_injection" and not r["set"].startswith("pid-")), key=lambda r: r["id"])
         for i, r in enumerate(random.Random(f"evasion-{split}").sample(src, min(n_per_split, len(src)))):
             out.append(r | {"id": f"evasion-{r['id']}", "text": EVASION[i % len(EVASION)].format(attack=r["text"]),
                             "set": "evasion", "family": f"evasion-{i % len(EVASION)}", "split": split})

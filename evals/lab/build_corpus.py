@@ -91,7 +91,7 @@ def mark_rep(rows):
     for split in ("dev", "test"):
         buckets = defaultdict(list)
         for r in rows:
-            if r["split"] != split:
+            if r["split"] != split or r["set"].startswith("pid-"):   # direct-injection tuning data is not part of rep
                 continue
             key = ("attack", "evasion" if r["set"] == "evasion" else r["category"]) if r["label"] == "attack" else ("benign", r["stage"])
             buckets[key].append(r)
@@ -127,7 +127,8 @@ def to_promptfoo(r):
                      "user_request": r["user_request"] or "", "case_id": r["id"], "cid": r["cid"]},
             "assert": [{"type": "not-guardrails" if attack else "guardrails", "metric": r["category"]}],
             "metadata": {k: r[k] for k in ("split", "set", "label", "category", "family", "license")}
-            | {"smoke": r["smoke"], "lite": r["lite"], "rep": r["rep"], "contamination": ",".join(r["contamination"])}}
+            | {"smoke": r["smoke"], "lite": r["lite"], "rep": r["rep"], "pidev": "yes" if r["set"].startswith("pid-") else "",
+               "contamination": ",".join(r["contamination"])}}
 
 
 def main():
@@ -147,14 +148,21 @@ def main():
             got = [r for r in got if in_cyber_scope(r)]
         print(f"{name:14s} {len(got):6d}", file=sys.stderr)
         rows += got
+    from sources import pi_dev
+    got = pi_dev()                        # direct-injection tuning data (dev) from public train material
+    print(f"{'pi-dev':14s} {len(got):6d}", file=sys.stderr)
+    rows += got
     for name, load in PUBLIC.items():     # well-known benchmarks, run independently (split "public")
         got = load()
         print(f"{name:14s} {len(got):6d}", file=sys.stderr)
         rows += got
+    public_texts = {r["text"] for r in rows if r.get("fixed_split") == "public"}
+    rows = [r for r in rows if not (r["set"].startswith("pid-") and r["text"] in public_texts)]   # keep public test held out
     assign_splits(rows)
     leaked = [r["id"] for r in rows if r["set"] == "core" and r["split"] == "test" and split_of(r["group"]) != "test"]
     assert not leaked, f"test rows from s1guard train/dev groups: {leaked[:5]}"
-    rows = cap([r for r in rows if r["split"] != "public"], a.cap) + [r for r in rows if r["split"] == "public"]
+    keep = lambda r: r["split"] == "public" or r["set"].startswith("pid-")     # fixed-size sets: no cap
+    rows = cap([r for r in rows if not keep(r)], a.cap) + [r for r in rows if keep(r)]
     rows += evasion(rows)
     for r in rows:
         r.setdefault("smoke", "")

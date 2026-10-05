@@ -17,7 +17,7 @@ dependencies = [
 laya = ["laya==0.3.22"]
 # LiteLLM gateway integration (custom guardrail)
 # >=1.102: streaming post_call guardrails via apply_guardrail
-gateway = ["litellm[proxy]>=1.102"]
+gateway = ["litellm[proxy]>=1.102", "prisma>=0.15"]   # prisma: LiteLLM spend DB (chargeback)
 # local Hugging Face guard models (encoders, small generative guards)
 # mistral-common: Shieldstral tokenizer (MistralCommonBackend), >=1.11.5 per its model card
 hf = ["transformers>=5.17", "torch>=2.14", "mistral-common>=1.11.5"]

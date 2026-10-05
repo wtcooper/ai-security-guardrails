@@ -1,10 +1,10 @@
 {
  "scope": "cyber",
- "rows": 6698,
- "lab_tests_sha256": "9901ac5ce7d2c16d2eef3a1e059cb6a2d77abd4fc87dd076b593110581bf557e",
+ "rows": 7243,
+ "lab_tests_sha256": "ed8cab35c2d29926afde526a256144d3b904a255edff0a7f7e891f67f58a651f",
  "by_split_label": {
-  "dev/attack": 686,
-  "dev/benign": 740,
+  "dev/attack": 892,
+  "dev/benign": 1079,
   "pool/attack": 575,
   "pool/benign": 460,
   "public/attack": 685,
@@ -45,6 +45,14 @@
   "pb-rogue/public/benign": 240,
   "pb-xtram1/public/attack": 126,
   "pb-xtram1/public/benign": 274,
+  "pid-deepset/dev/attack": 55,
+  "pid-deepset/dev/benign": 94,
+  "pid-jackhhao/dev/attack": 47,
+  "pid-jackhhao/dev/benign": 50,
+  "pid-rogue/dev/attack": 59,
+  "pid-rogue/dev/benign": 90,
+  "pid-xtram1/dev/attack": 45,
+  "pid-xtram1/dev/benign": 105,
   "stages/dev/attack": 13,
   "stages/dev/benign": 43,
   "stages/test/attack": 12,
@@ -59,8 +67,8 @@
   "test": 105
  },
  "lite": {
-  "dev": 1001,
-  "test": 1002
+  "test": 1002,
+  "dev": 1002
  },
  "rep": {
   "dev/attack/cyber": 30,
@@ -98,6 +106,10 @@
   "pb-jackhhao/s1guard_train": 218,
   "pb-rogue/s1guard_train": 18,
   "pb-xtram1/s1guard_train": 27,
+  "pid-deepset/s1guard_train": 76,
+  "pid-jackhhao/s1guard_train": 81,
+  "pid-rogue/s1guard_train": 3,
+  "pid-xtram1/s1guard_train": 10,
   "stages/s1guard_train": 10,
   "toolcall/s1guard_train": 1
  },
@@ -130,6 +142,10 @@
   "pb-jackhhao: jackhhao/jailbreak-classification | Apache-2.0 | ",
   "pb-rogue: rogue-security/prompt-injections-benchmark | CC-BY-NC-4.0 (evaluation only) | ",
   "pb-xtram1: xTRam1/safe-guard-prompt-injection | none declared (evaluation use) | ",
+  "pid-deepset: deepset/prompt-injections (train) | Apache-2.0 | ",
+  "pid-jackhhao: jackhhao/jailbreak-classification (train) | Apache-2.0 | ",
+  "pid-rogue: rogue-security/prompt-injections-benchmark (disjoint from public sample) | CC-BY-NC-4.0 (evaluation only) | ",
+  "pid-xtram1: xTRam1/safe-guard-prompt-injection (train) | none declared (evaluation use) | ",
   "stages: authored (smoke_stages.yaml) | MIT | ",
   "stages: authored + gemma4:e2b replies (dev_stages.jsonl) | MIT | ",
   "toolcall: johannhartmann/toolcall-guard-v1 | MIT | "

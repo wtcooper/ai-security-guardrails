@@ -29,14 +29,18 @@ print(snapshot_download('meta-llama/Llama-Guard-4-12B', revision='$REV', local_d
     uv run --no-project --python 3.12 --with "$WORK/llama.cpp/gguf-py" --with torch --with transformers \
       --with sentencepiece --with numpy --with safetensors \
       python "$WORK/llama.cpp/convert_hf_to_gguf.py" "$WORK/hf" --outtype bf16 --outfile "$WORK/lg4-bf16.gguf"
-    # LG4 is dense (0 experts) but its config keeps num_experts_per_tok=1; llama.cpp asserts
-    # expert_used_count <= expert_count when loading, so zero it before quantizing.
-    echo y | uv run --no-project --python 3.12 --with "$WORK/llama.cpp/gguf-py" python \
-      "$WORK/llama.cpp/gguf-py/gguf/scripts/gguf_set_metadata.py" --force "$WORK/lg4-bf16.gguf" llama4.expert_used_count 0
+    # LG4 is dense (expert_count 0, interleave_moe_layer_step 0) but llama.cpp's llama4 loader rejects
+    # zero experts and asserts expert_used_count <= expert_count. Expert tensors are only created for
+    # MoE layers (none here), so declaring 1 expert is safe: every layer loads its dense FFN.
+    for kv in "llama4.expert_count 1" "llama4.expert_used_count 1"; do
+      echo y | uv run --no-project --python 3.12 --with "$WORK/llama.cpp/gguf-py" python \
+        "$WORK/llama.cpp/gguf-py/gguf/scripts/gguf_set_metadata.py" --force "$WORK/lg4-bf16.gguf" $kv
+    done
     llama-quantize "$WORK/lg4-bf16.gguf" "$WORK/lg4-Q4_K_M.gguf" Q4_K_M
     rm -f "$WORK/lg4-bf16.gguf"                    # keep only the quantized model
     ls -lh "$WORK/lg4-Q4_K_M.gguf" ;;
   serve)
-    exec llama-server -m "$WORK/lg4-Q4_K_M.gguf" --port "${PORT:-8767}" -c 8192 --jinja -ngl 99 ;;
+    # --no-prefill-assistant: a final assistant turn is the Agent message to classify, not a prefill
+    exec llama-server -m "$WORK/lg4-Q4_K_M.gguf" --port "${PORT:-8767}" -c 4096 --jinja -ngl 99 --no-prefill-assistant ;;
   *) echo "usage: $0 setup|serve" >&2; exit 2 ;;
 esac

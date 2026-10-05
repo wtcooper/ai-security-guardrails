@@ -24,6 +24,7 @@ providers:
   - {id: file://provider_guard.py, label: s1-v4, config: {guard: s1-v4, workers: 1}}
   - {id: file://provider_guard.py, label: judge-luna, config: {guard: judge-luna}}
   - {id: file://provider_guard.py, label: judge-luna-single, config: {guard: judge-luna-single}}
+  - {id: file://provider_guard.py, label: judge-luna-consolidated, config: {guard: judge-luna-consolidated}}
   - {id: file://provider_guard.py, label: judge-luna-think, config: {guard: judge-luna-think}}
   - {id: file://provider_guard.py, label: judge-luna-combined, config: {guard: judge-luna-combined}}
   - {id: file://provider_guard.py, label: judge-flash-lite, config: {guard: judge-flash-lite}}

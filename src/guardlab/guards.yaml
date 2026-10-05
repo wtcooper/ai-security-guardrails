@@ -39,6 +39,59 @@ guards:
     effort: none
     stage2_effort: low
     max_tokens: 8
+  judge-luna-consolidated:  # one instruction set per side: request (pre-call) and response (post-call)
+    adapter: llm_judge
+    family: llm-judge
+    license: OpenAI API
+    model: gpt-6-luna
+    price: {input: 0.10, cached_input: 0.01, output: 0.50}
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    mode: two_stage
+    review_band: [4, 6]
+    effort: none
+    stage2_effort: low
+    max_tokens: 8
+    policies:
+      input: [consolidated/request]
+      conversation: [consolidated/request]
+      tool_result: [consolidated/request]
+      tool_definition: [consolidated/request]
+      tool_call: [consolidated/response]
+      output: [consolidated/response]
+  judge-luna-gw:            # judge-luna billed through the LiteLLM gateway (runs only inside the gateway)
+    adapter: llm_judge
+    family: llm-judge
+    license: OpenAI API (via LiteLLM)
+    model: gpt-6-luna          # the gateway's model_name, shared with inference
+    base_url: ""
+    api_key_env: ""
+    transport: litellm
+    mode: two_stage
+    review_band: [4, 6]
+    effort: none
+    stage2_effort: low
+    max_tokens: 8
+  judge-luna-consolidated-gw:
+    adapter: llm_judge
+    family: llm-judge
+    license: OpenAI API (via LiteLLM)
+    model: gpt-6-luna
+    base_url: ""
+    api_key_env: ""
+    transport: litellm
+    mode: two_stage
+    review_band: [4, 6]
+    effort: none
+    stage2_effort: low
+    max_tokens: 8
+    policies:
+      input: [consolidated/request]
+      conversation: [consolidated/request]
+      tool_result: [consolidated/request]
+      tool_definition: [consolidated/request]
+      tool_call: [consolidated/response]
+      output: [consolidated/response]
   judge-luna-single:
     adapter: llm_judge
     family: llm-judge

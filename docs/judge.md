@@ -147,5 +147,68 @@ judge-luna (frozen C4) binary F1 by benchmark:
 - **Weaker on direct-injection sets** whose labels count casual "ignore that, now write X" prompts
   as attacks.
 
-**Next tuning target:** rounds that use the *train* splits of deepset and xTRam1 as additional dev
-data, keeping their test splits held out.
+**Next tuning target:** rounds that use the *train* splits of these sets as additional dev data,
+keeping their test splits held out. Done in rounds D1–D3 below.
+
+## Direct-injection rounds D1–D3 (2026-10-04)
+
+**Tuning data (`pi-dev`, 545 cases):** rows from the *train* splits of deepset, xTRam1, jackhhao and
+rogue-security (`pid-*` sets), disjoint from the public test rows (exact-text overlaps dropped) and
+excluded from `rep`. Run with `bash evals/run.sh lab pi-dev`. Every round is also checked on rep-dev,
+so the agentic results don't regress.
+
+**Noise floor:** two uncached runs of the same D3 policies differ by up to 0.02 F1 on both sets.
+
+| Round | Change | pi-dev F1 (per-policy / consolidated) | rep-dev F1 (per-policy / consolidated) |
+|---|---|---:|---:|
+| D1 | baseline: frozen C4 policies (injection v5) | 0.72 / 0.74 | 0.91 / — |
+| D2 | injection v6: coercion of the AI, authority/persona reframing, task splicing and prompt references; narrower role-play exception | 0.78 / 0.80 | 0.91 / 0.89 |
+| D3 | injection v7: global resets and fake task completion count even when the new task is harmless; "rules don't apply in this world" framing; sentence-completion secret extraction | 0.77–0.79 / 0.82 | 0.90–0.91 / 0.88–0.90 |
+
+**Reading:**
+- D1 → D2 is a real gain (+0.06 F1, three times the noise floor).
+- D3 is within noise for per-policy and +0.02 for consolidated. Gains have levelled off, so the
+  policies are frozen at D3.
+
+**What remains (not worth chasing):**
+- deepset rows that are attacks only against its news-bot system prompt (off-topic opinion questions
+  with no override marker);
+- rogue-security role-play requests for harmful non-cyber content (outside this lab's scope);
+- label noise: some benign rogue rows contain explicit overrides ("ignore any previous system
+  instructions");
+- toolcall-guard-v1: several labels contradict the request as written (a transfer that matches the
+  request exactly is labelled unsafe; an address update to the wrong city is labelled benign), so
+  the label depends on tool history the case doesn't include. Not tuned on.
+
+**Frozen (D3):** injection v7, cyber v1, indirect v3, action v3, output v5, common v2. The
+consolidated instructions are rebuilt from these by `evals/lab/build_consolidated.py`.
+
+## Two judge versions: per-policy vs consolidated (frozen D3, held out, run once)
+
+- **Per-policy (`judge-luna`):** one call per policy per checked item. Input runs injection and
+  cyber in parallel; a tool result runs indirect; a tool call runs action; a reply runs output.
+- **Consolidated (`judge-luna-consolidated`):** one call per checked item.
+  `consolidated/request.md` (injection + cyber + indirect) is the pre-call check and
+  `consolidated/response.md` (action + output) the post-call check.
+
+| | per-policy | consolidated |
+|---|---:|---:|
+| rep-test recall / FPR | 86% / 4% | 88% / 6% |
+| rep-test F1 / AUROC | 0.91 / 0.923 | 0.91 / 0.918 |
+| public F1: BIPIA / deepset / jackhhao / rogue / xTRam1 | 0.961 / 0.519 / 0.935 / 0.694 / 0.890 | 0.953 / 0.537 / 0.947 / 0.725 / 0.875 |
+| public mean F1 (frozen C4: 0.747) | 0.800 | 0.807 |
+| p50 / p95 latency (rep-test) | 690 / 1104 ms | 696 / 1165 ms |
+| $ per 1k checked items | 0.08 | 0.05 |
+| gateway chargeback, one chat request (same prompt) | 4 spend rows, $0.000329 | 3 spend rows, $0.000105 |
+
+**Reading:**
+- **Quality** is the same within noise on our benchmark. Consolidated is slightly better on the
+  public direct-injection sets, and flags about 2 points more benign cases.
+- **Cost:** consolidated is about 40% cheaper per checked item. It makes one judge call per side,
+  so a chat request costs three gateway calls: pre-call judge, inference, post-call judge. See
+  [chargeback.md](chargeback.md).
+- **Latency** is equal, because per-policy calls run in parallel.
+- **Recommendation:** deploy consolidated. Keep per-policy as the tuning harness, because its
+  errors show which policy failed.
+- **Public sets:** the test splits were never tuned on. The D rounds tuned on train splits from the
+  same sources, so these numbers are in-distribution rather than zero-shot.

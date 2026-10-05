@@ -13,7 +13,8 @@ Same traffic mapping as s1guard's guardrail: request -> new user turns (input), 
 (conversation), new tool results, tool definitions; response -> reply (output, with the system prompt)
 and tool calls (tool_call, with the user's request); MCP -> call + tool descriptions, then results.
 A block raises GuardrailRaisedException -> HTTP 400 "Blocked by <guard id> (<request|response>): <reason>".
-The guard's own model calls go directly to its provider, never back through this gateway.
+Judges with `transport: litellm` call their model through this gateway's router, billed to the caller's
+key (chargeback; router calls skip guardrails, so no recursion); other guards call their provider directly.
 """
 
 import asyncio
@@ -29,7 +30,7 @@ from s1guard.guard import (CONVERSATION_TURNS, _new_messages, last_user_message,
                            tool_call_text, tool_definition_text)
 
 from .registry import load_guard
-from .types import Case
+from .types import CALLER, Case
 
 
 def cases_from_inputs(inputs: dict, request_data: dict, input_type: str) -> list:
@@ -82,7 +83,14 @@ class LabGuardrail(CustomGuardrail):
                               logging_obj: Optional[object] = None) -> GenericGuardrailAPIInputs:
         guard = self.guard
         cases = [c for c in cases_from_inputs(dict(inputs), request_data, input_type) if c.stage in guard.stages]
-        results = await asyncio.gather(*(guard.acheck(c) for c in cases))
+        meta = {**(request_data.get("litellm_metadata") or {}), **(request_data.get("metadata") or {})}
+        caller = {k: v for k, v in meta.items() if k.startswith("user_api_key") and isinstance(v, (str, int, float))}
+        caller["tags"] = [f"guardrail_stage:{'pre_call' if input_type == 'request' else 'post_call'}"]
+        token = CALLER.set(caller)   # read by guards that bill their model calls to the caller's key
+        try:
+            results = await asyncio.gather(*(guard.acheck(c) for c in cases))
+        finally:
+            CALLER.reset(token)
         blocks = [(c, r) for c, r in zip(cases, results) if r.status == "ok" and r.blocked]
         down = [(c, r) for c, r in zip(cases, results) if r.status in ("unavailable", "error")]
         if down and self.on_unavailable == "block":

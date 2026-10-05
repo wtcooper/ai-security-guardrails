@@ -5,6 +5,7 @@ limit, access denied, 5xx) and `error` (bug, unparseable verdict) still set `blo
 `fail_closed`, but reports can count them separately."""
 
 import asyncio
+import contextvars
 import hashlib
 import json
 import time
@@ -42,6 +43,11 @@ class GuardResult:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+# Who is being guarded: set by the LiteLLM guardrail from the calling request (API key hash, team, alias, tags),
+# so guards that call models through the gateway can attribute their spend to the same key (chargeback).
+CALLER: contextvars.ContextVar[dict] = contextvars.ContextVar("guardlab_caller", default={})
 
 
 class Unavailable(Exception):
@@ -88,4 +94,20 @@ class BaseGuard:
         return r
 
     async def acheck(self, case: Case) -> GuardResult:
-        return await asyncio.to_thread(self.check, case)
+        """Guards with a native async implementation (`_acheck`) run on the event loop; others in a thread."""
+        if not hasattr(self, "_acheck"):
+            return await asyncio.to_thread(self.check, case)
+        if case.stage not in self.stages:
+            return GuardResult(blocked=False, status="unsupported", reason=f"{self.id} does not screen {case.stage}")
+        t0 = time.perf_counter()
+        for attempt in (0, 1):
+            try:
+                r = await self._acheck(case)
+                break
+            except Unavailable as e:
+                r = GuardResult(blocked=self.fail_closed, status="unavailable", reason=str(e))
+            except Exception as e:
+                r = GuardResult(blocked=self.fail_closed, status="error", reason=f"{type(e).__name__}: {e}")
+                break
+        r.latency_ms = round((time.perf_counter() - t0) * 1000, 1)
+        return r
