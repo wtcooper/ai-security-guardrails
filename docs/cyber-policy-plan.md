@@ -165,7 +165,7 @@ uv run python evals/lab/report.py --per-file <round-1.json> <round-2.json>
 
 # 5. when the criteria in §5 are met: confirm the new text earns its place,
 #    i.e. the full prompt must still beat the version with Definitions removed
-PF_CONCURRENCY=8 bash evals/run.sh lab cyber-dev 'judge-luna-consolidated|judge-abl-nodefs'
+PF_CONCURRENCY=8 bash evals/run.sh lab cyber-dev 'judge-luna-consolidated|judge-abl-nodefs-cyber'   # only cyber's Definitions removed
 
 # 6. freeze: run the held-out sets once
 PF_CONCURRENCY=8 bash evals/run.sh lab cyber-test 'judge-luna-consolidated'
@@ -182,6 +182,57 @@ Each round costs a few cents and a couple of minutes; it is API-only, with no lo
   [docs/judge.md](judge.md) as rounds K2, K3, … following the style of the existing round sections.
 - The remaining misses after the final round, by tactic, with the judge's digit — and a note on which are
   worth chasing and which are label or framing artefacts.
-- Whether the added Definitions section beat the `judge-abl-nodefs` ablation (step 5). If it did not, the
+- Whether the added Definitions section beat the `judge-abl-nodefs-cyber` ablation (step 5). If it did not, the
   text is not earning its place and should be cut back.
 - The one held-out `cyber-test` and `rep-test` result, clearly marked as run once.
+
+## Phase 2: reduce false flags (opened 2026-10-06)
+
+The full, self-contained brief for this phase is [cyber-tuning-handoff.md](cyber-tuning-handoff.md). It
+now also covers four production **recall** gaps (working exploit/injection payloads, cloud-credential
+retrieval, phishing/impersonation content) that a simpler judge catches and v3 misses — see its §1b. Those
+need a held-out probe set from the owner's work evals, and point to simplifying v3 back toward v1's
+unconditional "block working offensive/deceptive artifact" rule rather than extending it.
+
+v3 shipped the recall gain, but out of sample it flags about 6.5% of legitimate security work: 6.6% on
+cyber-test and 6.3% on the pool, against the 5% target. Phase 2 lowers that without giving back the
+recall. Rounds K8–K9 in [judge.md](judge.md) have the evidence.
+
+**What is known:**
+- **Every false flag is a confident first-pass verdict** (digit 7–9). Sending flagged messages to the
+  reasoning review was tested (K9) and is ruled out: false flags did not change, and recall fell 16
+  points.
+- **The legitimate prompts are system-administration coding tasks that almost never state whose systems
+  they are for** (4 of 229 on pool-A do).
+- **The likely source** is v3's rule that rates a request highly when it lacks an ownership or
+  authorization statement and has an enumeration goal.
+
+**What to change:**
+- Work on the **legitimate-work side** of `cyber.md`: the "Does not violate" criteria and how much weight
+  a missing ownership statement carries on its own.
+- Do not remove or weaken the offensive criteria that produced the recall gain.
+- Same one-file rule and constraints as above. No technique content and no corpus text.
+
+**Data and tool:**
+
+```bash
+# tune on dev + pool-A (re-judges only when the prompt changes)
+uv run python evals/lab/build_consolidated.py --ablations
+uv run python evals/lab/experiments/cyber_tune.py K10-<what-changed> --slices dev,poolA
+# validate once, on the frozen candidate only
+uv run python evals/lab/experiments/cyber_tune.py K<n>-validate --slices poolB
+```
+
+**Acceptance (tune on dev + pool-A; validate on pool-B once):**
+
+| # | Criterion | v3 (K8) | Target |
+|---|---|---:|---:|
+| 1 | pool-A legitimate work flagged | 5.2% | **≤ 3.0%** |
+| 2 | pool-A attacks caught | 92.5% | **≥ 91%** |
+| 3 | pool-A F1 | 0.935 | **≥ 0.94** |
+| 4 | dev: discovery / reconnaissance | 7/7 / 10/10 | ≥ 6/7 / ≥ 9/10 |
+| 5 | rep-dev F1 (no regression elsewhere) | 0.93 | ≥ 0.91 |
+| 6 | pool-B, once, on the frozen candidate | — | flagged ≤ 4%, F1 ≥ 0.93 |
+
+cyber-test has already been used once for v3. Report any further look at it as a second look.
+

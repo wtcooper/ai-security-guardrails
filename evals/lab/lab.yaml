@@ -32,6 +32,7 @@ providers:
   - {id: file://provider_guard.py, label: judge-abl-single, config: {guard: judge-abl-single}}
   - {id: file://provider_guard.py, label: judge-abl-nocommon, config: {guard: judge-abl-nocommon}}
   - {id: file://provider_guard.py, label: judge-abl-nodefs, config: {guard: judge-abl-nodefs}}
+  - {id: file://provider_guard.py, label: judge-abl-nodefs-cyber, config: {guard: judge-abl-nodefs-cyber}}
   - {id: file://provider_guard.py, label: judge-abl-withexamples, config: {guard: judge-abl-withexamples}}
   - {id: file://provider_guard.py, label: dec-luna-emu, config: {guard: dec-luna-emu}}
   - {id: file://provider_guard.py, label: dec-jev, config: {guard: dec-jev}}

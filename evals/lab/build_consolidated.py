@@ -10,8 +10,12 @@ The shipped instructions leave out each policy's Examples section: measured on t
 nothing (docs/judge.md, round S1), and dropping it removes ~19% of the prompt. The examples stay in the policy
 files, where they document the intent for whoever tunes them. --keep-examples ships them anyway.
 
-With --ablations it also writes consolidated/ablations/<drop>-<side>.md: the same instructions with one
-section type removed, to measure what each part of the prompt is worth.
+With --ablations it also writes consolidated/ablations/<variant>-<side>.md, each differing from the shipped
+prompt in exactly one way, so a comparison against the shipped prompt measures that one thing:
+  withexamples          the shipped prompt plus every policy's Examples
+  nodefs                every policy's Definitions removed
+  nodefs-<policy>       only that policy's Definitions removed (e.g. nodefs-cyber: is a rewrite's new
+                        Definitions section earning its place?)
 """
 
 import re
@@ -30,9 +34,6 @@ SIDES = {
     "response": (["action", "output"], "post-call (response side): the assistant's reply and the tool calls it wants to make",
                  "proposed tool call -> section 1; assistant reply -> section 2"),
 }
-
-
-DROPS = {"nodefs": "Definitions", "withexamples": None, "noexamples": "Examples"}   # withexamples = the full text
 
 
 def drop_section(text: str, heading: str | None) -> str:
@@ -59,12 +60,20 @@ def main():
                 f"# Consolidated guardrail instructions: {scope}\n\n"
                 "You check one piece of content against every risk below. The <content_type> tag tells you what it is; "
                 f"apply the sections that fit it ({which}). Rate the most severe violation you find.\n\n")
-        full = head + "\n\n".join(parts) + "\n"          # every section, the basis for the ablations
-        for name, heading in (DROPS.items() if ablate else []):
-            out = drop_section(full, heading)
-            (OUT / "ablations" / f"{name}-{side}.md").write_text(out)
-            print(f"  ablations/{name}-{side}.md  ({len(out.split())} words)")
-        shipped = full if keep_examples else drop_section(full, "Examples")
+        assemble = lambda ps: head + "\n\n".join(ps) + "\n"
+        ship = lambda text: text if keep_examples else drop_section(text, "Examples")
+        full = assemble(parts)
+        shipped = ship(full)
+        if ablate:   # every variant differs from `shipped` in exactly one way
+            variants = {"withexamples": full, "nodefs": drop_section(shipped, "Definitions")}
+            for i, name in enumerate(names):
+                one = parts[:i] + [drop_section(parts[i], "Definitions")] + parts[i + 1:]
+                variants[f"nodefs-{name}"] = ship(assemble(one))
+            for old in (OUT / "ablations").glob(f"*-{side}.md"):
+                old.unlink()
+            for variant, text in variants.items():
+                (OUT / "ablations" / f"{variant}-{side}.md").write_text(text)
+                print(f"  ablations/{variant}-{side}.md  ({len(text.split())} words)")
         (OUT / f"{side}.md").write_text(shipped)
         print(f"{side}.md <- {', '.join(versions)}  ({len(shipped.split())} words)")
 
