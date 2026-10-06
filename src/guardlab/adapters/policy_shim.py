@@ -2,7 +2,7 @@
 (e.g. Nemotron-3.5-Content-Safety, evals/lab/shims/nemotron_server.py).
 
 The guard sends each case with the judge's policy for that stage (src/guardlab/judge/policies, the
-same tuned cyber policies judge-luna uses), so the comparison isolates the model. Several policies
+same tuned cyber policies cyber-guard-per-policy uses), so the comparison isolates the model. Several policies
 for one stage are sent as separate requests; score = max P(unsafe).
 """
 

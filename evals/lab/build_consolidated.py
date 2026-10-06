@@ -1,5 +1,5 @@
 """Rebuild the consolidated judge instructions from the per-policy files, so both judge versions
-(per-policy `judge-luna`, consolidated `judge-luna-consolidated`) share the same tuned rule text.
+(per-policy `cyber-guard-per-policy`, consolidated `cyber-guard`) share the same tuned rule text.
 
     uv run python evals/lab/build_consolidated.py
 

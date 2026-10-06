@@ -36,30 +36,30 @@ guardrails:
       default_on: false
   # Any guardlab registry guard (src/guardlab/guards.yaml) via one generic guardrail class.
   # LAB ONLY: this judge calls OpenAI directly, so its cost is NOT in LiteLLM's spend DB. Deploy cyber-guard.
-  - guardrail_name: judge-luna
+  - guardrail_name: cyber-guard-per-policy
     litellm_params:
       guardrail: guardlab.litellm_guardrail.LabGuardrail
       mode: [pre_call, post_call, pre_mcp_call, post_mcp_call]
       default_on: false
-      guard_id: judge-luna
+      guard_id: cyber-guard-per-policy
       on_unavailable: block
       on_block: error          # the single-turn e2e A/B reads 400 "Blocked by" messages
-  # Same judges, but their luna calls go through THIS gateway's router with the caller's key metadata,
+  # Same judges, but their model calls go through THIS gateway's router with the caller's key metadata,
   # so LiteLLM writes each judge call to the spend DB against the calling team key (chargeback).
-  - guardrail_name: judge-luna-gw
+  - guardrail_name: cyber-guard-per-policy-gw
     litellm_params:
       guardrail: guardlab.litellm_guardrail.LabGuardrail
       mode: [pre_call, post_call, pre_mcp_call, post_mcp_call]
       default_on: false
-      guard_id: judge-luna-gw
+      guard_id: cyber-guard-per-policy-gw
       on_unavailable: block
       on_block: refuse         # keeps post-call-blocked inference billed
-  - guardrail_name: judge-luna-consolidated-gw
+  - guardrail_name: cyber-guard-gw
     litellm_params:
       guardrail: guardlab.litellm_guardrail.LabGuardrail
       mode: [pre_call, post_call, pre_mcp_call, post_mcp_call]
       default_on: false
-      guard_id: judge-luna-consolidated-gw
+      guard_id: cyber-guard-gw
       on_unavailable: block
   # Recommended placement (docs/guardrail-placement.md): screen everything entering inference (user turns,
   # tool results, tool definitions) before the model reads it; check the model's tool calls before they
@@ -71,7 +71,7 @@ guardrails:
       guardrail: guardlab.litellm_guardrail.LabGuardrail
       mode: [pre_call, post_call]
       default_on: false
-      guard_id: judge-luna-consolidated-gw
+      guard_id: cyber-guard-gw
       on_unavailable: allow   # fail open: judge down, erroring or over budget -> inference proceeds (logged)
       deadline_s: 10          # total time budget per hook (normal p95 ~3 s)
       on_block: refuse        # HTTP 200, fixed refusal, finish_reason "content_filter" (reason in the gateway log)
@@ -83,7 +83,7 @@ guardrails:
       guardrail: guardlab.litellm_guardrail.LabGuardrail
       mode: [pre_call]
       default_on: false
-      guard_id: judge-luna-consolidated-gw
+      guard_id: cyber-guard-gw
       on_unavailable: allow
       deadline_s: 10
       on_block: refuse

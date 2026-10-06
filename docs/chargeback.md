@@ -6,8 +6,8 @@ LiteLLM's database, using **the same gateway model deployment** as the inference
 
 ## How it works
 
-- **Which guards bill this way.** The gateway-billed judges `judge-luna-gw` and
-  `judge-luna-consolidated-gw` (in [guards.yaml](../src/guardlab/guards.yaml)) use `transport: litellm`.
+- **Which guards bill this way.** The gateway-billed judges `cyber-guard-per-policy-gw` and
+  `cyber-guard-gw` (in [guards.yaml](../src/guardlab/guards.yaml)) use `transport: litellm`.
 - **How a judge call is made.** Inside the gateway, `guardlab.litellm_guardrail.LabGuardrail` reads
   the caller's identity from the request metadata: the hashed key, team, user, org and alias. The
   judge then calls `gpt-6-luna` through **LiteLLM's own router**, passing that identity as metadata,
@@ -34,7 +34,7 @@ request can take, using a fresh team and one key per path, and checks the spend 
 
 For every path, the key's spend equals the sum of its rows and the team's spend equals the sum over its keys.
 
-**Results:** **CHARGEBACK OK** for `cyber-guard`, `judge-luna-consolidated-gw` and `judge-luna-gw`, and for
+**Results:** **CHARGEBACK OK** for `cyber-guard`, `cyber-guard-gw` and `cyber-guard-per-policy-gw`, and for
 `cyber-guard-pre` (run with `--pre-call-only`).
 
 ### What makes every path billable
@@ -56,7 +56,7 @@ For every path, the key's spend equals the sum of its rows and the team's spend 
   [guardrail-placement.md](guardrail-placement.md)). Don't use it.
 - **`on_block: error`.** Post-call-blocked inference is recorded as a $0 failure. Only the lab entries
   that need 400 messages use it.
-- **Lab-only entries `judge-luna` and `dec-luna-emu`.** They call OpenAI directly, so their judge cost
+- **Lab-only entries `cyber-guard-per-policy` and `dec-luna-emu`.** They call OpenAI directly, so their judge cost
   never reaches LiteLLM. Deploy `cyber-guard` or a `-gw` entry instead.
 - **A judge call that times out** (20 s) is recorded as a $0 failure, even though the provider may bill
   a partial generation. This is rare: the normal p95 is about 3 s.

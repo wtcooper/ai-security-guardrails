@@ -22,12 +22,12 @@ providers:
   - {id: file://provider_guard.py, label: regex, config: {guard: regex}}
   - {id: file://provider_guard.py, label: s1-zeroshot, config: {guard: s1-zeroshot, workers: 1}}
   - {id: file://provider_guard.py, label: s1-v4, config: {guard: s1-v4, workers: 1}}
-  - {id: file://provider_guard.py, label: judge-luna, config: {guard: judge-luna}}
-  - {id: file://provider_guard.py, label: judge-luna-single, config: {guard: judge-luna-single}}
-  - {id: file://provider_guard.py, label: judge-luna-consolidated, config: {guard: judge-luna-consolidated}}
-  - {id: file://provider_guard.py, label: judge-luna-think, config: {guard: judge-luna-think}}
-  - {id: file://provider_guard.py, label: judge-luna-combined, config: {guard: judge-luna-combined}}
-  - {id: file://provider_guard.py, label: judge-flash-lite, config: {guard: judge-flash-lite}}
+  - {id: file://provider_guard.py, label: cyber-guard-per-policy, config: {guard: cyber-guard-per-policy}}
+  - {id: file://provider_guard.py, label: cyber-guard-per-policy-single, config: {guard: cyber-guard-per-policy-single}}
+  - {id: file://provider_guard.py, label: cyber-guard, config: {guard: cyber-guard}}
+  - {id: file://provider_guard.py, label: cyber-guard-per-policy-think, config: {guard: cyber-guard-per-policy-think}}
+  - {id: file://provider_guard.py, label: cyber-guard-combined, config: {guard: cyber-guard-combined}}
+  - {id: file://provider_guard.py, label: cyber-guard-per-policy-smoke, config: {guard: cyber-guard-per-policy-smoke}}
   - {id: file://provider_guard.py, label: dec-openai, config: {guard: dec-openai}}
   - {id: file://provider_guard.py, label: judge-abl-single, config: {guard: judge-abl-single}}
   - {id: file://provider_guard.py, label: judge-abl-nocommon, config: {guard: judge-abl-nocommon}}

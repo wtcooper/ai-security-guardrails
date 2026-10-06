@@ -19,7 +19,7 @@ prompts: ["{{prompt}}"]
 providers:
   - {id: file://../promptfoo/provider_gateway.py, label: baseline, config: {model: "gemma4:e2b", guardrails: [], max_tokens: 512}}
   - {id: file://../promptfoo/provider_gateway.py, label: s1guard, config: {model: "gemma4:e2b", guardrails: [s1guard], max_tokens: 512}}
-  - {id: file://../promptfoo/provider_gateway.py, label: judge-luna, config: {model: "gemma4:e2b", guardrails: [judge-luna], max_tokens: 512}}
+  - {id: file://../promptfoo/provider_gateway.py, label: cyber-guard-per-policy, config: {model: "gemma4:e2b", guardrails: [cyber-guard-per-policy], max_tokens: 512}}
 
 defaultTest:
   options:

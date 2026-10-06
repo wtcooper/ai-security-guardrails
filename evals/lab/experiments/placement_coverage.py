@@ -16,7 +16,7 @@ from guardlab.registry import load_guard
 from guardlab.types import Case
 from guardlab.trajectory import task_context
 
-OUT = Path(sys.argv[1]); guard = load_guard(sys.argv[2] if len(sys.argv) > 2 else "judge-luna-consolidated")
+OUT = Path(sys.argv[1]); guard = load_guard(sys.argv[2] if len(sys.argv) > 2 else "cyber-guard")
 rows = [r for r in load_dataset("johannhartmann/toolcall-guard-v1", split="test_unseen_tools") if r["label"] in ("BLOCK", "CONTINUE")]
 cache = {json.loads(l)["k"]: json.loads(l)["blocked"] for l in OUT.open()} if OUT.exists() else {}
 traj, todo = [], {}

@@ -2,11 +2,11 @@
 s1guard), so the guard you evaluate is the guard you deploy:
 
     guardrails:
-      - guardrail_name: judge-luna
+      - guardrail_name: cyber-guard-per-policy
         litellm_params:
           guardrail: guardlab.litellm_guardrail.LabGuardrail
           mode: [pre_call, post_call, pre_mcp_call, post_mcp_call]
-          guard_id: judge-luna          # registry id (src/guardlab/guards.yaml)
+          guard_id: cyber-guard-per-policy          # registry id (src/guardlab/guards.yaml)
           on_unavailable: block         # or allow (fail open): judge down, erroring, or over deadline_s
           deadline_s: 10                # optional: total time budget per hook; over budget = unavailable
           streaming_buffer_until_moderated: true   # default: hold a streamed reply until the post-call check

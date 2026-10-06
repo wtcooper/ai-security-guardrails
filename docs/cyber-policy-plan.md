@@ -153,23 +153,23 @@ Then, and only then: freeze, and run `cyber-test` and `rep-test` **once** each.
 uv run python evals/lab/build_consolidated.py --ablations
 
 # 2. tune: the cyber slice, then the whole benchmark for regressions
-PF_CONCURRENCY=8 bash evals/run.sh lab cyber-dev 'judge-luna-consolidated'
-PF_CONCURRENCY=8 bash evals/run.sh lab rep-dev   'judge-luna-consolidated'
+PF_CONCURRENCY=8 bash evals/run.sh lab cyber-dev 'cyber-guard'
+PF_CONCURRENCY=8 bash evals/run.sh lab rep-dev   'cyber-guard'
 
 # 3. read the errors (missed attacks and false flags, with the judge's digit)
 uv run python evals/lab/report.py \
-  evals/results/lab/cyber-dev-judge-luna-consolidated.json --errors judge-luna-consolidated
+  evals/results/lab/cyber-dev-cyber-guard.json --errors cyber-guard
 
 # 4. compare rounds
 uv run python evals/lab/report.py --per-file <round-1.json> <round-2.json>
 
 # 5. when the criteria in §5 are met: confirm the new text earns its place,
 #    i.e. the full prompt must still beat the version with Definitions removed
-PF_CONCURRENCY=8 bash evals/run.sh lab cyber-dev 'judge-luna-consolidated|judge-abl-nodefs-cyber'   # only cyber's Definitions removed
+PF_CONCURRENCY=8 bash evals/run.sh lab cyber-dev 'cyber-guard|judge-abl-nodefs-cyber'   # only cyber's Definitions removed
 
 # 6. freeze: run the held-out sets once
-PF_CONCURRENCY=8 bash evals/run.sh lab cyber-test 'judge-luna-consolidated'
-PF_CONCURRENCY=8 bash evals/run.sh lab rep-test   'judge-luna-consolidated'
+PF_CONCURRENCY=8 bash evals/run.sh lab cyber-test 'cyber-guard'
+PF_CONCURRENCY=8 bash evals/run.sh lab rep-test   'cyber-guard'
 uv run pytest -q
 ```
 

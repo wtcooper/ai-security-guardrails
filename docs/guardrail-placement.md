@@ -78,7 +78,7 @@ The `cyber-guard` entry in [gateway/litellm_config.yaml](../gateway/litellm_conf
   litellm_params:
     guardrail: guardlab.litellm_guardrail.LabGuardrail
     mode: [pre_call, post_call]          # no during_call (chargeback), no MCP hooks (redundant)
-    guard_id: judge-luna-consolidated-gw # judge calls billed to the caller's team key
+    guard_id: cyber-guard-gw # judge calls billed to the caller's team key
     on_unavailable: allow                # fail open: judge down, erroring or over budget -> inference proceeds
     deadline_s: 10                       # total time budget per hook
     on_block: refuse                     # 200 refusal, finish_reason "content_filter"; every model call stays billed

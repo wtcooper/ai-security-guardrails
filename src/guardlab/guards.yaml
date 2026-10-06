@@ -45,7 +45,7 @@ guards:
 
   # ------------------------------------------------------------------ LLM-as-a-judge: our policies on a hosted LLM
   # Policies: src/guardlab/judge/policies/*.md (versioned); tuning log: docs/judge.md.
-  judge-luna:
+  cyber-guard-per-policy:
     adapter: llm_judge
     family: llm-judge
     license: OpenAI API
@@ -59,7 +59,7 @@ guards:
     effort: none
     stage2_effort: low
     max_tokens: 8
-  judge-luna-consolidated:  # one instruction set per side: request (pre-call) and response (post-call)
+  cyber-guard:  # one instruction set per side: request (pre-call) and response (post-call)
     adapter: llm_judge
     family: llm-judge
     license: OpenAI API
@@ -80,7 +80,7 @@ guards:
       tool_definition: [consolidated/request]
       tool_call: [consolidated/response]
       output: [consolidated/response]
-  judge-luna-gw:            # judge-luna billed through the LiteLLM gateway (runs only inside the gateway)
+  cyber-guard-per-policy-gw:  # per-policy judge billed through LiteLLM (runs only inside the gateway)
     adapter: llm_judge
     family: llm-judge
     license: OpenAI API (via LiteLLM)
@@ -94,7 +94,7 @@ guards:
     effort: none
     stage2_effort: low
     max_tokens: 8
-  judge-luna-consolidated-gw:
+  cyber-guard-gw:
     adapter: llm_judge
     family: llm-judge
     license: OpenAI API (via LiteLLM)
@@ -115,7 +115,7 @@ guards:
       tool_definition: [consolidated/request]
       tool_call: [consolidated/response]
       output: [consolidated/response]
-  judge-luna-single:
+  cyber-guard-per-policy-single:
     adapter: llm_judge
     family: llm-judge
     license: OpenAI API
@@ -126,7 +126,7 @@ guards:
     mode: single           # stage 1 only: one digit per policy, block at >= block_at
     effort: none
     max_tokens: 8
-  judge-luna-think:        # round-5 experiment: stage 1 with low reasoning, single stage
+  cyber-guard-per-policy-think:        # round-5 experiment: stage 1 with low reasoning, single stage
     adapter: llm_judge
     family: llm-judge
     license: OpenAI API
@@ -137,7 +137,7 @@ guards:
     mode: single
     effort: low
     max_tokens: 512
-  judge-luna-combined:     # round-5 experiment: one call per stage (input: injection + harmful together)
+  cyber-guard-combined:     # round-5 experiment: one call per stage (input: injection + harmful together)
     adapter: llm_judge
     family: llm-judge
     license: OpenAI API
@@ -151,7 +151,7 @@ guards:
     effort: none
     stage2_effort: low
     max_tokens: 8
-  judge-flash-lite:        # smoke tests only, after luna's policies are frozen
+  cyber-guard-per-policy-smoke:  # smoke tests only, after the main judge's policies are frozen
     adapter: llm_judge
     family: llm-judge
     license: Gemini API
@@ -159,12 +159,12 @@ guards:
     base_url: https://generativelanguage.googleapis.com/v1beta/openai
     api_key_env: GEMINI_API_KEY
     mode: two_stage
-    review_band: [4, 6]    # same frozen configuration as judge-luna
+    review_band: [4, 6]    # same frozen configuration as cyber-guard-per-policy
     effort: ""             # Gemini's OpenAI endpoint rejects reasoning_effort "none"; default answers a bare digit
     stage2_effort: ""
     max_tokens: 8
 
-  # Ablations of judge-luna-consolidated: what each part of the prompt/harness is worth (docs/judge.md).
+  # Ablations of cyber-guard: what each part of the prompt/harness is worth (docs/judge.md).
   judge-abl-single:
     adapter: llm_judge
     family: llm-judge (ablation)
@@ -376,14 +376,14 @@ guards:
     mode: single
     effort: low
     max_tokens: 1024
-    notes: Ollama MXFP4; same policies as judge-luna (src/guardlab/judge/policies), so this isolates the model
+    notes: Ollama MXFP4; same policies as cyber-guard-per-policy (src/guardlab/judge/policies), so this isolates the model
   nemotron-cs-4b:
     adapter: policy_shim
     family: oss-classifier (policy-following)
     license: NVIDIA OpenMDW-1.1 + Gemma terms
     base_url: http://127.0.0.1:8766
     notes: >-
-      Nemotron-3.5-Content-Safety (rev 35645ed3543b) in custom-policy mode with judge-luna's cyber policies;
+      Nemotron-3.5-Content-Safety (rev 35645ed3543b) in custom-policy mode with cyber-guard-per-policy's cyber policies;
       runs in .venv-nemotron behind evals/lab/shims/nemotron_server.py (start it first)
   llama-guard4-12b:
     adapter: llamaguard_server

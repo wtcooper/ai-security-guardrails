@@ -16,7 +16,7 @@ These sit alongside stock guard models and provider APIs in the comparison.
 | **Self-hosted classifiers** | Fixed training task or a supplied classification policy | Local models | Evaluated: Prompt Guard 2, Sentinel v2, DeBERTa, Llama Guard 4, Qwen3Guard, Shieldstral, Granite Guardian, Nemotron and gpt-oss-safeguard |
 | **Self-hosted decision models** | Questions and context supplied to the model; weights can be fine-tuned | Local models | Evaluated: `s1-zeroshot` (Laya), `s1-v4` (our Laya fine-tune), `strands-decider-2b`. Registered, not yet evaluated: `clef-flash-9b` |
 | **Hosted decision APIs** | Questions sent to the provider | Provider API | Registered, awaiting evaluation/access: `dec-jev` (TypeSafe Jev via OpenRouter), `dec-openai` (OpenAI Decisions API) |
-| **LLM-as-a-judge** | Policy instructions and application context | Hosted LLM | Evaluated: `judge-luna` (per-policy) and `judge-luna-consolidated` (combined request/response policies), using gpt-6-luna |
+| **LLM-as-a-judge** | Policy instructions and application context | Hosted LLM | Evaluated: `cyber-guard-per-policy` (per-policy) and `cyber-guard` (combined request/response policies), using gpt-6-luna |
 
 The [guard registry](src/guardlab/guards.yaml) includes a regex baseline. `dec-luna-emu` is a chat-LLM
 test double for the Decisions API format; its scores do not measure a hosted decision model.
@@ -74,8 +74,10 @@ paused; the recipes and adapters remain available for building and evaluating a 
 Five [policy files](src/guardlab/judge/policies/) cover injection, malicious cyber requests, indirect
 injection, unsafe actions and output leakage. Shared instructions are in `common.md`.
 [The builder](evals/lab/build_consolidated.py) generates request/response prompts, omitting Examples
-based on section-ablation results. `judge-luna` checks policies separately; the consolidated adapter
-combines them. Policies, context handling and ablations are documented in [the tuning log](docs/judge.md).
+based on section-ablation results. `cyber-guard-per-policy` checks policies separately;
+`cyber-guard` combines them. Choose the judge model through the registry's `model` configuration.
+The `-gw` variants route checks through LiteLLM for chargeback. Policies, context handling and
+ablations are documented in [the tuning log](docs/judge.md).
 
 The selected malicious-cyber policy is **v4**: it keeps the original defensive-work allowances and
 adds general target-profiling and deceptive-identity rules. Its frozen validation caught **90.5%**
@@ -99,9 +101,9 @@ they are not a fresh comparison of the current policies. Full tables are in
 
 | Guard | Category | Attacks caught | Benign flagged | F1 | AUROC | p50 latency |
 |---|---|---:|---:|---:|---:|---:|
-| **judge-luna-consolidated** (combined policies) | LLM judge (gpt-6-luna) | 89% | **4%** | **0.93** | 0.928 | 732 ms |
-| **judge-luna** (same rules, one call per policy: the tuning harness) | LLM judge (gpt-6-luna) | **90%** | **4%** | **0.93** | **0.939** | 805 ms |
-| safeguard-20b (judge-luna's C4 policies) | self-hosted classifier (policy-following) | 80% | 2% | 0.88 | 0.904 | 3184 ms |
+| **cyber-guard** (combined policies) | LLM judge (gpt-6-luna) | 89% | **4%** | **0.93** | 0.928 | 732 ms |
+| **cyber-guard-per-policy** (same rules, one call per policy: the tuning harness) | LLM judge (gpt-6-luna) | **90%** | **4%** | **0.93** | **0.939** | 805 ms |
+| safeguard-20b (cyber-guard-per-policy's C4 policies) | self-hosted classifier (policy-following) | 80% | 2% | 0.88 | 0.904 | 3184 ms |
 | dec-luna-emu (test double: luna behind the Decisions API format) | LLM, decision-API format | 80% | 10% | 0.85 | 0.858 | n/a* |
 | granite-guardian-8b | self-hosted classifier | 73% | 14% | 0.79 | binary | 1458 ms |
 | sentinel-v2 † | self-hosted classifier | 70% | 17% | 0.77 | 0.849 | 137 ms |
@@ -171,9 +173,9 @@ policy tuning used the public train splits; these test splits were not used for 
 
 | Guard | BIPIA (indirect) | deepset | jackhhao | rogue-security | xTRam1 |
 |---|---:|---:|---:|---:|---:|
-| judge-luna (D3) | **0.961** | 0.519 | 0.935 | 0.694 | 0.890 |
-| judge-luna-consolidated (D3) | 0.953 | 0.537 | 0.947 | 0.725 | 0.875 |
-| judge-luna (C4, before the D rounds) | 0.966 | 0.462 | 0.943 | 0.649 | 0.714 |
+| cyber-guard-per-policy (D3) | **0.961** | 0.519 | 0.935 | 0.694 | 0.890 |
+| cyber-guard (D3) | 0.953 | 0.537 | 0.947 | 0.725 | 0.875 |
+| cyber-guard-per-policy (C4, before the D rounds) | 0.966 | 0.462 | 0.943 | 0.649 | 0.714 |
 | dec-luna-emu | 0.556 | **0.588** | 0.947 | **0.805** | 0.800 |
 | deberta-pi-v2 | 0.378 | 0.537 | — ¶ | 0.659 | **0.924** |
 | pg2-86m | 0.020 | 0.235 | 0.967 | 0.664 | 0.711 |
@@ -185,7 +187,7 @@ policy tuning used the public train splits; these test splits were not used for 
 **What this shows:**
 
 - **Indirect injection:** the luna judges dominate (BIPIA 0.95–0.96).
-- **Direct injection:** rounds D1–D3 tuned on the *train* splits of these sets, raising judge-luna's
+- **Direct injection:** rounds D1–D3 tuned on the *train* splits of these sets, raising cyber-guard-per-policy's
   mean F1 from 0.747 to 0.800 (consolidated 0.807). The judge still trails on deepset and
   rogue-security, whose remaining misses are mostly attacks only against an absent system prompt,
   or non-cyber role-play outside this lab's scope.
@@ -248,7 +250,7 @@ gpt-6-luna grader.
 | Arm | Attack success | Benign requests blocked by the guard | p50 |
 |---|---:|---:|---:|
 | baseline (no guardrail) | 32% | — | 5.7 s |
-| judge-luna (LabGuardrail) | **4%** | 0 / 17 | 1.3 s |
+| cyber-guard-per-policy (LabGuardrail) | **4%** | 0 / 17 | 1.3 s |
 | s1guard v4 | 0% | 0 / 17 | 1.3 s |
 
 Remaining benign failures in every arm are the target model's own refusals. This is a historical
@@ -296,7 +298,7 @@ uv run python evals/lab/build_corpus.py             # builds evals/lab/data/ (gi
 ```bash
 uv run guardlab list
 uv run guardlab check --guard regex --stage input "Review our incident-response checklist."
-uv run guardlab check --guard judge-luna-consolidated --stage input "Review our incident-response checklist."
+uv run guardlab check --guard cyber-guard --stage input "Review our incident-response checklist."
 ```
 
 `--stage` is one of `input`, `conversation`, `tool_result`, `tool_definition`, `tool_call` or
@@ -306,10 +308,10 @@ checks. The exit code is 2 when the guard blocks.
 **Run an evaluation** (promptfoo run, then the report):
 
 ```bash
-bash evals/run.sh lab rep-dev 'regex|judge-luna-consolidated'
+bash evals/run.sh lab rep-dev 'regex|cyber-guard'
 # After setting up local models, compare classifier and decision-model adapters too:
 bash evals/run.sh lab rep-dev 'deberta-pi-v2|s1-zeroshot|s1-v4'
-PF_CONCURRENCY=8 bash evals/run.sh lab public 'judge-luna-consolidated'   # more parallelism for API guards
+PF_CONCURRENCY=8 bash evals/run.sh lab public 'cyber-guard'   # more parallelism for API guards
 ```
 
 | Mode | Cases |
@@ -329,7 +331,7 @@ new cases, because results are cached per guard version.
 
 ```bash
 uv run python evals/lab/report.py evals/results/lab/rep-test-*.json --by category   # or --by set|stage
-uv run python evals/lab/report.py <results.json> --errors judge-luna                  # missed attacks, false alarms
+uv run python evals/lab/report.py <results.json> --errors cyber-guard-per-policy                  # missed attacks, false alarms
 uv run python evals/lab/report.py <test files> --dev <dev files> --out evals/lab/leaderboard.md
 ```
 
@@ -398,7 +400,7 @@ guardrails:
 - **Chargeback:** the `*-gw` judges call luna through the gateway's own router with the caller's key
   metadata. LiteLLM records each pre- and post-call judge call in its spend DB against the same team
   key as the inference. Verified: [docs/chargeback.md](docs/chargeback.md).
-- **Configured judge example: the `cyber-guard` entry.** It uses `judge-luna-consolidated-gw`,
+- **Configured judge example: the `cyber-guard` entry.** It uses `cyber-guard-gw`,
   which now loads cyber policy v4. Its placement and failure behavior were studied separately:
   - **Pre-call** on everything entering inference.
   - **Post-call only when the response contains tool calls,** so plain chat replies add no post-call
@@ -414,7 +416,7 @@ guardrails:
 - **Every model call is charged back.** Judge calls, the inference, and the inference behind a
   post-call block are all billed to the caller's team key in LiteLLM's spend DB, streamed or not.
   Pre-call blocks bill only the judge, because the model never ran. `evals/lab/chargeback_check.py`
-  verifies all five paths. Lab-only entries (`judge-luna`, `dec-luna-emu`) call OpenAI directly and
+  verifies all five paths. Lab-only entries (`cyber-guard-per-policy`, `dec-luna-emu`) call OpenAI directly and
   aren't charged back. See [docs/chargeback.md](docs/chargeback.md).
 
   Measured in [docs/guardrail-placement.md](docs/guardrail-placement.md). Pre-call alone stops 87% of
@@ -434,7 +436,7 @@ docker run -d --name guardlab-litellm-db -e POSTGRES_USER=litellm -e POSTGRES_PA
     -e POSTGRES_DB=litellm -p 127.0.0.1:5433:5432 postgres:17-alpine
 uv run prisma generate --schema .venv/lib/python3.12/site-packages/litellm/proxy/schema.prisma   # once
 DATABASE_URL=postgresql://litellm:litellm-local@127.0.0.1:5433/litellm bash gateway/start_gateway.sh
-uv run python evals/lab/chargeback_check.py --guardrail judge-luna-consolidated-gw
+uv run python evals/lab/chargeback_check.py --guardrail cyber-guard-gw
 ```
 
 ## Layout

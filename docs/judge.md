@@ -1,7 +1,12 @@
 # LLM-as-a-judge guard: design and tuning log
 
-**Guard ids:** `judge-luna` (two-stage) and `judge-luna-single` (stage 1 only), both on `gpt-6-luna`;
-`judge-flash-lite` (`gemini-3.5-flash-lite`, smoke tests only).
+**Guard ids:** `cyber-guard` (consolidated) and `cyber-guard-per-policy` (separate policies).
+`cyber-guard-per-policy-single` uses stage 1 only; `cyber-guard-per-policy-smoke` is a smoke-test variant.
+Models are configured in [guards.yaml](../src/guardlab/guards.yaml): the main guards currently use
+`gpt-6-luna`, and the smoke variant uses `gemini-3.5-flash-lite`.
+
+This log uses the current guard IDs throughout. Recorded result artifacts retain their original
+labels and filenames; the rename changes neither policy versions nor measured results.
 
 **Where things live:**
 - Adapter: [src/guardlab/adapters/llm_judge.py](../src/guardlab/adapters/llm_judge.py)
@@ -39,8 +44,8 @@
 
 ## Protocol
 
-1. **Each round:** run `bash evals/run.sh lab dev judge-luna` on the full **dev** split (2,319 cases).
-2. **Inspect:** read every false negative and false positive (`report.py ... --errors judge-luna`),
+1. **Each round:** run `bash evals/run.sh lab dev cyber-guard-per-policy` on the full **dev** split (2,319 cases).
+2. **Inspect:** read every false negative and false positive (`report.py ... --errors cyber-guard-per-policy`),
    revise the policies, and bump their versions.
 3. **Accept a revision** only if dev F1 improves without a set regressing by more than 3 points.
 4. **Test runs once,** on the frozen final version.
@@ -62,15 +67,15 @@ that in mind.
 | 4 | harmful v4 | 82% | 9% | 0.865 | 0.899 | 761 | 0.08 | Added manipulation and abuse, IP piracy and unsafe medical advice; questions presuming a real group should lose rights now count. WildGuardTest recall 77→81%, toolcall FPR 34→30%, TPR@5%FPR 54→75%. Exact F1 by round: 0.793 → 0.858 → 0.863 → 0.865; macro balanced accuracy 0.829 → 0.895 → 0.899 → 0.903. |
 | 5 | v4 policies; structural variants | 82% | 8.5% | 0.865 | 0.899 | 761 | 0.08 | `-think` (reasoning before the digit): 87% / 15%, F1 0.864, p50 1356 ms, $0.19. Stricter, not better; rejected. `-combined` (both input policies in one call): F1 0.865, same recall/FPR, **$0.04/1k**, p50 740 ms, coarser scores (TPR@5%FPR 43%). Kept as the low-cost option. A per-policy threshold sweep trades recall for FPR without improving F1 (e.g. harmful ≥7: 80.8% / 7.0%); this is an operating-point choice. |
 
-**Frozen for test:** `judge-luna` = policies v4 (harmful v4, injection v2, indirect v2, action v3,
+**Frozen for test:** `cyber-guard-per-policy` = policies v4 (harmful v4, injection v2, indirect v2, action v3,
 output v2, common v2), stage 1 `reasoning_effort: none`, stage 2 (low) only for digits 4–6.
 
 ## Held-out test (run once, frozen v4 configuration)
 
 | Guard | n (attack/benign) | Recall | FPR | F1 | AUROC | TPR@5%FPR | p50 ms | p95 ms | $/1k |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| judge-luna | 2526/2263 | 81% | 9% | 0.85 | 0.890 | 73% | 782 | 1806 | 0.13 |
-| judge-luna-combined | 2526/2262 | 79% | 9% | 0.84 | 0.878 | 43% | 709 | 1339 | 0.05 |
+| cyber-guard-per-policy | 2526/2263 | 81% | 9% | 0.85 | 0.890 | 73% | 782 | 1806 | 0.13 |
+| cyber-guard-combined | 2526/2262 | 79% | 9% | 0.84 | 0.878 | 43% | 709 | 1339 | 0.05 |
 | s1-v4 (reference) | 2397/2149 | 51% | 10% | 0.64 | 0.795 | 33% | 194 | 1083 | — |
 
 - **Generalization:** dev F1 was 0.865 and test is 0.85. The tuning generalized; it did not overfit dev.
@@ -118,10 +123,10 @@ stage-2 review band 4–6.
 
 | Guard | Caught | Benign flagged | F1 | AUROC | TPR@5%FPR | p50 ms | $/1k |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| **judge-luna** | **88%** | **4%** | **0.92** | **0.928** | 89% | 716 | 0.08 |
+| **cyber-guard-per-policy** | **88%** | **4%** | **0.92** | **0.928** | 89% | 716 | 0.08 |
 | safeguard-20b (same policies, local gpt-oss-safeguard) | 80% | 2% | 0.88 | 0.904 | 82% | 3184 | local |
 
-**Caught by category (judge-luna):**
+**Caught by category (cyber-guard-per-policy):**
 
 | tool_poisoning | data_leakage | indirect_injection | cyber | output_leak | prompt_injection | unsafe_tool_call |
 |---:|---:|---:|---:|---:|---:|---:|
@@ -137,7 +142,7 @@ Benign FPR is 4%.
 
 ## Public benchmarks (run independently, never tuned on)
 
-judge-luna (frozen C4) binary F1 by benchmark:
+cyber-guard-per-policy (frozen C4) binary F1 by benchmark:
 
 | BIPIA (indirect) | deepset | jackhhao | rogue-security | xTRam1 |
 |---:|---:|---:|---:|---:|
@@ -185,9 +190,9 @@ consolidated instructions are rebuilt from these by `evals/lab/build_consolidate
 
 ## Two judge versions: per-policy vs consolidated (frozen D3, held out, run once)
 
-- **Per-policy (`judge-luna`):** one call per policy per checked item. Input runs injection and
+- **Per-policy (`cyber-guard-per-policy`):** one call per policy per checked item. Input runs injection and
   cyber in parallel; a tool result runs indirect; a tool call runs action; a reply runs output.
-- **Consolidated (`judge-luna-consolidated`):** one call per checked item.
+- **Consolidated (`cyber-guard`):** one call per checked item.
   `consolidated/request.md` (injection + cyber + indirect) is the pre-call check and
   `consolidated/response.md` (action + output) the post-call check.
 

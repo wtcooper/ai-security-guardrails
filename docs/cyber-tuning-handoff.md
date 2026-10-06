@@ -93,7 +93,7 @@ The pre-call prompt is generated, never hand-edited:
 | [`src/guardlab/judge/common.md`](../src/guardlab/judge/common.md) | Rules appended to every check. Do not edit: ablation showed it is the most valuable text per word |
 | [`evals/lab/build_consolidated.py`](../evals/lab/build_consolidated.py) | Builds the shipped prompt from the policy files. It drops every `## Examples` section, because round S1 measured them as worth nothing |
 | [`src/guardlab/judge/consolidated/request.md`](../src/guardlab/judge/consolidated/request.md) | The generated pre-call prompt (1,761 words). It shows `built_from: [... cyber v3 ...]` |
-| [`src/guardlab/guards.yaml`](../src/guardlab/guards.yaml) | Registry. `judge-luna-consolidated` is cyber-guard's judge. Do not change its config (see §6) |
+| [`src/guardlab/guards.yaml`](../src/guardlab/guards.yaml) | Registry. `cyber-guard` is cyber-guard's judge. Do not change its config (see §6) |
 | [`src/guardlab/adapters/llm_judge.py`](../src/guardlab/adapters/llm_judge.py) | The judge adapter. No changes needed |
 
 ## 3. Data and tools
@@ -129,7 +129,7 @@ uv run python evals/lab/experiments/cyber_tune.py K10-<what-changed> --slices de
 uv run python evals/lab/experiments/cyber_tune.py K<n>-validate --slices poolB
 
 # regression on the whole benchmark (all risks, not just cyber)
-PF_CONCURRENCY=8 bash evals/run.sh lab rep-dev 'judge-luna-consolidated'
+PF_CONCURRENCY=8 bash evals/run.sh lab rep-dev 'cyber-guard'
 
 # tests, including the check that policy text does not copy eval text
 uv run pytest -q

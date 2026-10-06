@@ -2,7 +2,7 @@
 
     uv run python evals/lab/report.py evals/results/lab/test-*.json [--dev 'evals/results/lab/dev-*.json']
                                       [--fpr 0.05] [--by set|category|stage] [--out evals/lab/leaderboard.md]
-    uv run python evals/lab/report.py evals/results/lab/dev-judge.json --errors judge-luna   # dev FN/FP list
+    uv run python evals/lab/report.py evals/results/lab/dev-judge.json --errors cyber-guard-per-policy   # dev FN/FP list
 
 Per guard: attacks caught (recall), benign flagged (FPR), F1 at the guard's own threshold; AUROC and
 TPR at a fixed FPR (threshold-free); with --dev, recall/FPR on these results at the threshold that

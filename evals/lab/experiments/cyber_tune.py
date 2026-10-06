@@ -53,7 +53,7 @@ def slices() -> dict:
 
 
 def judge(review_band_input):
-    cfg = yaml.safe_load(open(ROOT / "src" / "guardlab" / "guards.yaml"))["guards"]["judge-luna-consolidated"]
+    cfg = yaml.safe_load(open(ROOT / "src" / "guardlab" / "guards.yaml"))["guards"]["cyber-guard"]
     cfg = {k: v for k, v in cfg.items() if k not in ("adapter", "family", "license", "trained_on", "notes")}
     if review_band_input:
         cfg["stage_review_band"] = dict(cfg.get("stage_review_band") or {}, input=review_band_input)
