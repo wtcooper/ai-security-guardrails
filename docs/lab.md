@@ -25,6 +25,7 @@ bash evals/run.sh lab rep-dev 'regex|judge-luna'   # representative dev set, the
 
 **Run modes** (`bash evals/run.sh lab <mode> '<guard regex>'`):
 - `rep-dev` / `rep-test`: the representative set, 407 cases each (tune and compare here).
+- `cyber-dev` / `cyber-test`: malicious cyber requests vs CyberSecEval's legitimate security work.
 - `smoke-dev` / `smoke-test`: about 100 cases each.
 - `lite-dev` / `lite-test`: about 1,000 cases each, for slow local models.
 - `dev` / `test`: full cyber splits, 920 and 1,933 cases.

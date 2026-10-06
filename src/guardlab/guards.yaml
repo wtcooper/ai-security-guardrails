@@ -164,6 +164,93 @@ guards:
     stage2_effort: ""
     max_tokens: 8
 
+  # Ablations of judge-luna-consolidated: what each part of the prompt/harness is worth (docs/judge.md).
+  judge-abl-single:
+    adapter: llm_judge
+    family: llm-judge (ablation)
+    license: OpenAI API
+    model: gpt-6-luna
+    price: {input: 0.10, cached_input: 0.01, output: 0.50}
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    mode: single
+    review_band: [4, 6]
+    stage_review_band: {tool_call: [4, 9]}
+    effort: none
+    stage2_effort: low
+    max_tokens: 8
+    policies:
+      input: [consolidated/request]
+      conversation: [consolidated/request]
+      tool_result: [consolidated/request]
+      tool_definition: [consolidated/request]
+      tool_call: [consolidated/response]
+      output: [consolidated/response]
+  judge-abl-nocommon:
+    adapter: llm_judge
+    family: llm-judge (ablation)
+    license: OpenAI API
+    model: gpt-6-luna
+    price: {input: 0.10, cached_input: 0.01, output: 0.50}
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    mode: two_stage
+    review_band: [4, 6]
+    stage_review_band: {tool_call: [4, 9]}
+    effort: none
+    stage2_effort: low
+    max_tokens: 8
+    common_rules: false
+    policies:
+      input: [consolidated/request]
+      conversation: [consolidated/request]
+      tool_result: [consolidated/request]
+      tool_definition: [consolidated/request]
+      tool_call: [consolidated/response]
+      output: [consolidated/response]
+  judge-abl-nodefs:
+    adapter: llm_judge
+    family: llm-judge (ablation)
+    license: OpenAI API
+    model: gpt-6-luna
+    price: {input: 0.10, cached_input: 0.01, output: 0.50}
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    mode: two_stage
+    review_band: [4, 6]
+    stage_review_band: {tool_call: [4, 9]}
+    effort: none
+    stage2_effort: low
+    max_tokens: 8
+    policies:
+      input: [consolidated/ablations/nodefs-request]
+      conversation: [consolidated/ablations/nodefs-request]
+      tool_result: [consolidated/ablations/nodefs-request]
+      tool_definition: [consolidated/ablations/nodefs-request]
+      tool_call: [consolidated/ablations/nodefs-response]
+      output: [consolidated/ablations/nodefs-response]
+  judge-abl-withexamples:
+    adapter: llm_judge
+    family: llm-judge (ablation)
+    license: OpenAI API
+    model: gpt-6-luna
+    price: {input: 0.10, cached_input: 0.01, output: 0.50}
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    mode: two_stage
+    review_band: [4, 6]
+    stage_review_band: {tool_call: [4, 9]}
+    effort: none
+    stage2_effort: low
+    max_tokens: 8
+    policies:
+      input: [consolidated/ablations/withexamples-request]
+      conversation: [consolidated/ablations/withexamples-request]
+      tool_result: [consolidated/ablations/withexamples-request]
+      tool_definition: [consolidated/ablations/withexamples-request]
+      tool_call: [consolidated/ablations/withexamples-response]
+      output: [consolidated/ablations/withexamples-response]
+
   # ------------------------------------------------------------------ hosted decision APIs: someone else's inference
   # s1guard's question battery (one yes/no question per risk) answered by a hosted decision model.
   dec-openai:              # real OpenAI Decisions API: returns `unavailable` until preview access is enabled

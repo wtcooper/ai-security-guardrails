@@ -5,6 +5,13 @@
 
 request.md  (pre-call):  injection + cyber + indirect_injection
 response.md (post-call): action + output
+
+The shipped instructions leave out each policy's Examples section: measured on three dev slices it is worth
+nothing (docs/judge.md, round S1), and dropping it removes ~19% of the prompt. The examples stay in the policy
+files, where they document the intent for whoever tunes them. --keep-examples ships them anyway.
+
+With --ablations it also writes consolidated/ablations/<drop>-<side>.md: the same instructions with one
+section type removed, to measure what each part of the prompt is worth.
 """
 
 import re
@@ -25,8 +32,21 @@ SIDES = {
 }
 
 
+DROPS = {"nodefs": "Definitions", "withexamples": None, "noexamples": "Examples"}   # withexamples = the full text
+
+
+def drop_section(text: str, heading: str | None) -> str:
+    """Remove every '### <heading>' block (up to the next ## or ### heading, or the end); None keeps everything."""
+    if heading is None:
+        return text
+    return re.sub(rf"^### {heading}\n.*?(?=^#{{2,3}} |\Z)", "", text, flags=re.M | re.S)
+
+
 def main():
+    ablate = "--ablations" in sys.argv
+    keep_examples = "--keep-examples" in sys.argv
     OUT.mkdir(parents=True, exist_ok=True)
+    (OUT / "ablations").mkdir(exist_ok=True)
     for side, (names, scope, which) in SIDES.items():
         parts, versions = [], []
         for i, name in enumerate(names, 1):
@@ -39,8 +59,14 @@ def main():
                 f"# Consolidated guardrail instructions: {scope}\n\n"
                 "You check one piece of content against every risk below. The <content_type> tag tells you what it is; "
                 f"apply the sections that fit it ({which}). Rate the most severe violation you find.\n\n")
-        (OUT / f"{side}.md").write_text(head + "\n\n".join(parts) + "\n")
-        print(f"{side}.md <- {', '.join(versions)}")
+        full = head + "\n\n".join(parts) + "\n"          # every section, the basis for the ablations
+        for name, heading in (DROPS.items() if ablate else []):
+            out = drop_section(full, heading)
+            (OUT / "ablations" / f"{name}-{side}.md").write_text(out)
+            print(f"  ablations/{name}-{side}.md  ({len(out.split())} words)")
+        shipped = full if keep_examples else drop_section(full, "Examples")
+        (OUT / f"{side}.md").write_text(shipped)
+        print(f"{side}.md <- {', '.join(versions)}  ({len(shipped.split())} words)")
 
 
 if __name__ == "__main__":

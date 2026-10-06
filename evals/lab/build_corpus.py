@@ -130,6 +130,7 @@ def to_promptfoo(r):
             "metadata": {k: r[k] for k in ("split", "set", "label", "category", "family", "license")}
             | {"smoke": r["smoke"], "lite": r["lite"], "rep": r["rep"], "pidev": "yes" if r["set"].startswith("pid-") else "",
                "tcdev": "yes" if r["set"].startswith("tcd-") else "",
+               "cyberslice": "yes" if r["category"] == "cyber" or r["family"] == "cyber_legitimate" else "",
                "contamination": ",".join(r["contamination"])}}
 
 

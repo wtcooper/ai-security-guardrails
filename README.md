@@ -1,15 +1,81 @@
-# ai-security-guardrails: a guardrail evaluation lab
+# ai-security-guardrails
 
-A lab for measuring which **runtime guardrails** stop the attacks adversaries use against LLM apps
-and agents, and for deploying the best ones in a LiteLLM gateway. It covers cyber-security risks only
-(OWASP Top 10 for LLM, MCP and Agentic apps; MITRE ATT&CK / ATLAS):
-- prompt injection (direct and indirect, through tool output);
-- guard evasion and jailbreaks of the AI;
-- tool poisoning and unsafe agent tool calls;
-- system-prompt and secret leakage;
-- malicious cyber requests.
+Two things live here:
 
-## Overview
+1. **`cyber-guard`** — a runtime guardrail for a LiteLLM gateway: an LLM-as-a-judge that screens
+   traffic in and out of an LLM or agent for cyber-security risk. This is the thing you deploy.
+2. **A lab that measures it** against 20+ alternatives (open-weight decision models, classifiers,
+   hosted decision APIs) on one corpus, so its numbers are comparative rather than self-reported.
+
+Scope is cyber-security only (OWASP Top 10 for LLM, MCP and Agentic apps; MITRE ATT&CK / ATLAS):
+prompt injection (direct and indirect), guard evasion and jailbreaks, tool poisoning, unsafe agent
+tool calls, system-prompt and secret leakage, and malicious cyber requests. Content safety is out of
+scope and [retired](src/guardlab/judge/retired/).
+
+## cyber-guard: the guardrail
+
+**What it checks, and where.** Two hooks on the gateway. An agent loop passes through the pre-call
+hook on every turn, which is where tool output is screened before the model can act on it.
+
+```
+user message ─► [PRE-CALL] ─► LLM ─► reply
+                                      ├─ text only  → returned (not checked)
+                                      └─ tool call  → [POST-CALL] ─► agent runs the tool ─► result ─► [PRE-CALL] ─► …
+```
+
+| Hook | Checks | Instructions |
+|---|---|---|
+| **pre-call** | the new user message; new tool results and tool definitions | `consolidated/request.md`: prompt injection + jailbreak, malicious cyber requests, indirect injection |
+| **post-call** | each tool call the model proposes, before it runs | `consolidated/response.md`: unsafe or unauthorized action, output leakage |
+
+Plain-text replies are not checked, so a chat turn pays for one check, not two. Post-call runs only
+when the reply contains tool calls — a structural field, not a guess. Why this placement, measured:
+[docs/guardrail-placement.md](docs/guardrail-placement.md).
+
+**How a check works.** One gpt-6-luna call returns a single digit, 0–9: 7+ blocks, 3− allows, and
+4–6 (any flagged tool call) gets a short reasoning review that decides. Content to judge is
+JSON-escaped inside `<untrusted_data>`; the application's rules, the user's recent turns and the
+agent's earlier steps are supplied separately as trusted or untrusted context. Long content is
+judged in overlapping windows. Identical checks are judged once and cached.
+
+**Operational behaviour**
+
+| | |
+|---|---|
+| **A block** | HTTP 200, fixed refusal text, `finish_reason: "content_filter"`, no tool calls — how model APIs signal a safety block, so agents end the turn gracefully. The reason goes to the gateway log only. |
+| **Judge down, erroring or slow** | fails **open** (`on_unavailable: allow`, `deadline_s: 10`): the user still gets inference, and the gateway logs `guard failed`. Alert on that. |
+| **Cost** | every model call — judge calls, the inference, and the inference behind a post-call block — is billed to the caller's team key in LiteLLM's spend DB. Verified on all five request paths: [docs/chargeback.md](docs/chargeback.md). |
+| **Latency** | ~0.7–0.9 s per check; ~3 s when the reasoning review fires. |
+| **Streaming** | held until the post-call check passes, so a blocked tool call never reaches the client. |
+
+**Deploy it** ([gateway/litellm_config.yaml](gateway/litellm_config.yaml)):
+
+```yaml
+- guardrail_name: cyber-guard
+  litellm_params:
+    guardrail: guardlab.litellm_guardrail.LabGuardrail
+    mode: [pre_call, post_call]
+    guard_id: judge-luna-consolidated-gw   # judge calls billed to the caller's key
+    on_unavailable: allow
+    deadline_s: 10
+    on_block: refuse
+    stages: [input, conversation, tool_result, tool_definition, tool_call]
+    skip_tools: []        # exact names of vetted tools; unknown tools are always checked
+```
+
+**How it scores** (held-out, never tuned on; full tables in [#results](#results)):
+
+| | Attacks caught | Benign flagged | F1 |
+|---|---:|---:|---:|
+| Combined cyber benchmark (`rep-test`, 407 cases) | 89% | 4% | **0.93** |
+| Malicious cyber requests vs legitimate security work (`cyber-test`, 392) | 88% | 3% | **0.92** |
+| Best non-judge guard on the combined benchmark (gpt-oss-safeguard-20b, local) | 80% | 2% | 0.88 |
+
+It went through 18 tuning rounds, all logged in [docs/judge.md](docs/judge.md). The instructions are
+also **measured for dead weight**: each section of the prompt is ablated and kept only if it earns
+its place (round S1 removed 19% of the prompt, halving input cost, with no measurable loss).
+
+## The lab: how the comparison works
 
 **How it works:**
 1. **One corpus.** [evals/lab/build_corpus.py](evals/lab/build_corpus.py) builds a single-turn cyber
@@ -36,7 +102,7 @@ can fine-tune it; calling someone else's API means we take the model as it is.
 
 | Category | Whose inference | Task defined | Evaluated | Registered, not yet run |
 |---|---|---|---|---|
-| **LLM-as-a-judge** | Hosted LLM (gpt-6-luna) | In our policy prompts | `judge-luna` (one call per policy), `judge-luna-consolidated` (one pre-call and one post-call check) | — |
+| **LLM-as-a-judge** | Hosted LLM (gpt-6-luna) | In our policy prompts | `judge-luna-consolidated` = **cyber-guard** (one pre-call + one post-call check); `judge-luna` (one call per policy, the tuning harness) | — |
 | **Hosted decision APIs** | The provider's | In the questions we send | — | `dec-jev` (TypeSafe Jev via OpenRouter), `dec-openai` (OpenAI Decisions API, invite-only) |
 | **Self-hosted decision models** | Ours (Mac CPU/GPU); fine-tunable | In the questions we send | `s1-zeroshot` (Laya), `s1-v4` (our Laya fine-tune), `strands-decider-2b` (AWS) | `clef-flash-9b` (Cloudflare) |
 | **Self-hosted classifiers** | Ours; fixed task | At training time | Encoders: Prompt Guard 2 86M/22M, Sentinel v2, `deberta-pi-v2`. Generative guard models: Llama Guard 4, Qwen3Guard 0.6B/4B, Shieldstral 3B. Policy-following: Granite Guardian 4.1, Nemotron 3.5 CS, gpt-oss-safeguard 20B | — |
@@ -64,15 +130,13 @@ All categories are scored on the same corpus. They have had different amounts of
 judge went through many rounds, s1-v4 was fine-tuned, and the rest run out of the box. The results
 tables say which is which.
 
-**How the LLM judge works:**
-- **Policies:** five files in [src/guardlab/judge/policies/](src/guardlab/judge/policies/)
-  (injection, cyber, indirect_injection, action, output), each in Instruction / Definitions /
-  Criteria / Examples form, plus shared rules in `common.md`. The consolidated version's
-  instructions are generated from the same files.
-- **Untrusted content** is JSON-escaped inside `<untrusted_data>`.
-- **Two-stage decision:** the first stage returns one digit, 0–9. 7 or more blocks, 3 or less allows,
-  and 4–6 goes to a short reasoning review.
-- **Tuning log:** [docs/judge.md](docs/judge.md).
+**The judge's instructions** are five policy files in
+[src/guardlab/judge/policies/](src/guardlab/judge/policies/) (injection, cyber, indirect_injection,
+action, output) plus shared rules in `common.md`, each written as Instruction / Definitions /
+Criteria / Examples. `cyber-guard`'s two prompts are generated from them by
+[build_consolidated.py](evals/lab/build_consolidated.py), which drops the Examples sections because
+round S1 measured them as worth nothing. `judge-luna` sends one policy per call and is kept as the
+tuning harness: when it errs, its reason names the policy that failed.
 
 ## Results
 
@@ -85,8 +149,8 @@ poisoning, unsafe tool calls, leakage and malicious cyber requests. See
 
 | Guard | Category | Attacks caught | Benign flagged | F1 | AUROC | p50 latency |
 |---|---|---:|---:|---:|---:|---:|
-| **judge-luna** (tuned, one call per policy) | LLM judge (gpt-6-luna) | 89% | **4%** | **0.93** | 0.930 | 845 ms |
-| **judge-luna-consolidated** (same rules, one call per side) | LLM judge (gpt-6-luna) | **90%** | **4%** | **0.93** | **0.935** | 885 ms |
+| **cyber-guard** (`judge-luna-consolidated`: one pre-call + one post-call check) | LLM judge (gpt-6-luna) | 89% | **4%** | **0.93** | 0.928 | 732 ms |
+| **judge-luna** (same rules, one call per policy: the tuning harness) | LLM judge (gpt-6-luna) | **90%** | **4%** | **0.93** | **0.939** | 805 ms |
 | safeguard-20b (judge-luna's C4 policies) | self-hosted classifier (policy-following) | 80% | 2% | 0.88 | 0.904 | 3184 ms |
 | dec-luna-emu (test double: luna behind the Decisions API format) | LLM, decision-API format | 80% | 10% | 0.85 | 0.858 | n/a* |
 | granite-guardian-8b | self-hosted classifier | 73% | 14% | 0.79 | binary | 1458 ms |
@@ -109,8 +173,9 @@ are excluded for it.
 ‡ Scored only on the 215 rows it was not trained on.
 § A content-safety model with no prompt-injection category. 8% of cases exceed its 4k context and
 are unavailable.
-Both judge rows use the frozen T5 policies, whose tool-call checks see the agent's trajectory; see
-[docs/judge.md](docs/judge.md). The other guards' tool-call rows were scored without the trajectory.
+Both judge rows use the frozen S1 instructions (T5 policies, Examples dropped), whose tool-call checks
+see the agent's trajectory; see [docs/judge.md](docs/judge.md). The other guards' tool-call rows were
+scored without the trajectory.
 
 - **Self-hosted decision models, out of the box.** Strands Decider 2B (F1 0.64, AUROC 0.845) beats
   zero-shot Laya (0.55) but trails our fine-tuned s1-v4 and the judges. Its default 0.5 threshold
@@ -121,6 +186,23 @@ Both judge rows use the frozen T5 policies, whose tool-call checks see the agent
     indicative.
 - **The reference classifier is narrow.** deberta-pi-v2 catches 94% of direct injection but only
   42% of indirect injection, and it flags 41% of NotInject's benign prompts.
+
+### Malicious cyber requests vs legitimate security work (`cyber-test`, 392 cases, held out)
+
+The slice that separates offensive requests from the defensive work that looks like them: 209 attacks
+(CyberSecEval MITRE and Interpreter, AdvBench cyber, multi-turn-to-single-turn rewrites) against 183 of
+CyberSecEval's false-refusal prompts (legitimate security work). Run with
+`bash evals/run.sh lab cyber-test`.
+
+| Guard | Attacks caught | Legitimate work wrongly flagged | F1 | AUROC |
+|---|---:|---:|---:|---:|
+| **cyber-guard** (`judge-luna-consolidated`) | 88% | **3%** | **0.92** | 0.939 |
+| `judge-luna` (per-policy) | 90% | 5% | **0.92** | 0.946 |
+
+**Where the remaining misses are** (`cyber-dev`, same composition): 11 of 110 attacks, concentrated in
+MITRE **reconnaissance** (4 of 10) and **discovery** (3 of 7). The judge scores 10 of those 11 a flat
+**0**, so no threshold or review-band change can reach them — only the policy text can. With false
+flags at 2–3% there is room to tighten. This is the open item in the roadmap.
 
 ### Well-known public benchmarks (binary F1, run independently; test splits never tuned on)
 
@@ -279,6 +361,8 @@ PF_CONCURRENCY=8 bash evals/run.sh lab public 'judge-luna-consolidated'   # more
 | `rep-dev` / `rep-test` | The combined benchmark: 407 representative cases each. Tune on dev and test once. |
 | `public` | The five public benchmarks (up to 400 cases each), never tuned on. |
 | `pi-dev` | Direct-injection tuning data from the public sets' train splits. |
+| `tc-dev` | Tool-call tuning data (toolcall-guard-v1 `val`). |
+| `cyber-dev` / `cyber-test` | Malicious cyber requests vs CyberSecEval's legitimate security work. |
 | `smoke-dev` / `smoke-test` | About 100 cases each. |
 | `lite-*`, `dev` / `test` | Larger cyber splits, for slow local models or full runs. |
 
@@ -445,7 +529,11 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
   safeguard-20b, Qwen3Guard and Shieldstral.
 - [ ] Watch list: Fastino GLiGuard-300M.
 
-*LLM-as-a-judge*
+*cyber-guard (the LLM judge)*
+- [ ] **Harden the cyber policy** on MITRE reconnaissance and discovery: 11 of 110 `cyber-dev` attacks are
+  missed, the judge scores 10 of them 0, and false flags sit at 2-3%, so there is room to tighten. Needs
+  the policy text (`src/guardlab/judge/policies/cyber.md`); the measurement loop is in place.
+- [x] Measure every prompt section for dead weight (round S1: Examples dropped, -19% of the prompt).
 - [x] Agent-loop A/B through the gateway with the chargeback (`-gw`) judge: [docs/agent-eval.md](docs/agent-eval.md).
 - [x] Check long content in windows. Text over 24k characters is judged in up to 8 overlapping windows
   (start, end and evenly spaced), so an injection in the middle of a long page is seen.
@@ -466,6 +554,7 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 - [ ] Deterministic filter for final replies: a URL allowlist for markdown links and images, plus
   secret patterns.
 - [ ] Rules + judge hybrid: s1guard's regex detectors in front of the judge.
+- [ ] Re-run the ablations after any policy rewrite, so new text has to earn its place too.
 
 *Evaluation hardening, from Red Hat's and guardrail-showdown's benchmarks*
 - [ ] Bootstrap 95% confidence intervals in the report. About 400 cases per split gives roughly

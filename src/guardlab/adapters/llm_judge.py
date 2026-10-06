@@ -97,16 +97,16 @@ class LLMJudge(BaseGuard):
                  effort: str = "none", stage2_effort: str = "low",
                  max_tokens: int = 4, timeout_s: float = 20, combine: bool = False, transport: str = "http",
                  policies: dict | None = None, extra: dict | None = None, price: dict | None = None,
-                 client=None, **kw):
+                 common_rules: bool = True, client=None, **kw):
         super().__init__(id, model=model, base_url=base_url, mode=mode, block_at=block_at,
                          review_band=list(review_band or [block_at, 9]), stage_review_band=stage_review_band or {},
                          effort=effort,
                          stage2_effort=stage2_effort, max_tokens=max_tokens, policies=policies or DEFAULT_POLICIES,
                          combine=combine, transport=transport,
-                         extra=extra or {}, price=price or {}, **kw)
+                         extra=extra or {}, price=price or {}, common_rules=common_rules, **kw)
         self.stages = frozenset(self.cfg["policies"]) & self.stages
         self._policies = {n: load_policy(n) for ps in self.cfg["policies"].values() for n in ps}
-        self._common = load_policy("common")[1]
+        self._common = load_policy("common")[1] if common_rules else ""   # False only for ablation runs
         key = os.environ.get(api_key_env, "") if api_key_env else ""
         self._timeout_s = timeout_s
         self._client = client or httpx.Client(base_url=base_url, timeout=timeout_s,
@@ -197,10 +197,10 @@ class LLMJudge(BaseGuard):
     # ------------------------------------------------------------------ one policy
     def _system(self, names: list) -> str:
         if len(names) == 1:
-            return self._policies[names[0]][1] + "\n\n" + self._common
+            return (self._policies[names[0]][1] + "\n\n" + self._common).strip()
         head = (f"You apply {len(names)} policies below. The content violates if it violates ANY of them; "
                 "rate the most severe violation.\n\n")
-        return head + "\n\n".join(self._policies[n][1] for n in names) + "\n\n" + self._common
+        return (head + "\n\n".join(self._policies[n][1] for n in names) + "\n\n" + self._common).strip()
 
     def _judge_steps(self, name: str, case: Case):
         """The judge logic as a generator: yields model requests, receives responses, returns the result.
