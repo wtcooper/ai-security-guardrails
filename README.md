@@ -530,9 +530,10 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 - [ ] Watch list: Fastino GLiGuard-300M.
 
 *cyber-guard (the LLM judge)*
-- [ ] **Harden the cyber policy** on MITRE reconnaissance and discovery: 11 of 110 `cyber-dev` attacks are
-  missed, the judge scores 10 of them 0, and false flags sit at 2-3%, so there is room to tighten. Needs
-  the policy text (`src/guardlab/judge/policies/cyber.md`); the measurement loop is in place.
+- [ ] **Harden the cyber policy** on MITRE reconnaissance (6/10 caught) and discovery (4/7): the judge
+  scores 10 of the 11 `cyber-dev` misses a flat 0, so only the policy text can reach them, and false flags
+  at 2-3% leave room to tighten. Written up as a spec for whoever writes it:
+  [docs/cyber-policy-plan.md](docs/cyber-policy-plan.md).
 - [x] Measure every prompt section for dead weight (round S1: Examples dropped, -19% of the prompt).
 - [x] Agent-loop A/B through the gateway with the chargeback (`-gw`) judge: [docs/agent-eval.md](docs/agent-eval.md).
 - [x] Check long content in windows. Text over 24k characters is judged in up to 8 overlapping windows

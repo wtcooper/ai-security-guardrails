@@ -8,6 +8,7 @@
 | [guardrail-placement.md](guardrail-placement.md) | Where to put the guardrail in LiteLLM: the during_call chargeback test, pre-call vs action-check coverage of agentic risk, the recommended `cyber-guard` config |
 | [chargeback.md](chargeback.md) | Billing the judge guardrail's model calls to the caller's LiteLLM key (verified in the spend DB) |
 | [judge.md](judge.md) | LLM-as-a-judge guard: design, round-by-round tuning log, frozen test result |
+| [cyber-policy-plan.md](cyber-policy-plan.md) | Spec for the open work: harden the malicious-cyber-request policy (gap, constraints, acceptance criteria, workflow) |
 | [decision-apis.md](decision-apis.md) | Decision APIs and self-hosted decision models: schemas, guards, the test double, switching to the OpenAI Decisions API |
 | [guardrail-showdown.md](guardrail-showdown.md) | Earlier head-to-head of s1guard against public encoders (rounds 1–2) |
 | [s1guard.md](s1guard.md) | The original s1guard README (fine-tuned System One decision model, paused) |
