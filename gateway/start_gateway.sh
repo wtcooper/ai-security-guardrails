@@ -6,4 +6,6 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 set -a; [ -f "$ROOT/.env" ] && . "$ROOT/.env"; set +a
+# the deployable agentic-security guardrail, loaded the way an enterprise gateway would: from its own folder
+export PYTHONPATH="$ROOT/deploy/agentic-security${PYTHONPATH:+:$PYTHONPATH}"
 exec "$ROOT/.venv/bin/litellm" --config "$ROOT/gateway/litellm_config.yaml" --port "${PORT:-4000}" --num_workers 1

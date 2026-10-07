@@ -31,9 +31,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ARMS = {                      # arm -> LiteLLM guardrail names (gateway/litellm_config.yaml)
     "baseline": [],
-    "precall": ["cyber-guard-pre"],       # pre-call only
-    "cyberguard": ["cyber-guard"],        # pre-call + post-call on tool calls
-}
+    "cyberguard": ["cyber-guard"],        # pre-call + post-call on tool calls (one judge call per piece, cached)
+    "agentic": ["agentic-security"],      # one judge call per hook over a 10-message window, no cache or state
+    "agenticsys": ["agentic-security-sys"],   # the same, with the app's system prompt shown to the judge
+}   # arm names become Inspect env-var prefixes (<ARM>_BASE_URL), so letters only
+if os.environ.get("AGENT_ARMS"):   # run a subset, e.g. AGENT_ARMS=agentic after changing only that guardrail
+    ARMS = {arm: ARMS[arm] for arm in os.environ["AGENT_ARMS"].split(",")}
 GATEWAY_URL = os.environ.get("GATEWAY_URL", "http://localhost:4000").rstrip("/")
 GATEWAY_KEY = os.environ.get("GATEWAY_KEY", "sk-local")
 AUDIT_LOG = os.environ.get("AUDIT_LOG", "agent_eval_audit.jsonl")

@@ -1,0 +1,15 @@
+# Add to an existing LiteLLM proxy config. agentic_security.py and prompts/ must be importable by the gateway
+# (next to this config, or on its PYTHONPATH). `judge_model` must be a model_name in model_list.
+guardrails:
+  - guardrail_name: agentic-security
+    litellm_params:
+      guardrail: agentic_security.AgenticSecurity
+      mode: [pre_call, post_call]   # pre_call (not during_call), so a block never cancels billed inference
+      default_on: false             # true: every request; false: requests that list it in "guardrails"
+      judge_model: gpt-6-luna
+      window: 10
+      include_system_prompt: false
+      on_unavailable: allow         # fail open
+      deadline_s: 10
+      hedge_s: 2.5                  # duplicate a slow first-pass judge call (both are billed)
+      surgical_withholding: true    # cut only the injected lines of a flagged tool result

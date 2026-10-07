@@ -16,12 +16,25 @@ These sit alongside stock guard models and provider APIs in the comparison.
 | **Self-hosted classifiers** | Fixed training task or a supplied classification policy | Local models | Evaluated: Prompt Guard 2, Sentinel v2, DeBERTa, Llama Guard 4, Qwen3Guard, Shieldstral, Granite Guardian, Nemotron and gpt-oss-safeguard |
 | **Self-hosted decision models** | Questions and context supplied to the model; weights can be fine-tuned | Local models | Evaluated: `s1-zeroshot` (Laya), `s1-v4` (our Laya fine-tune), `strands-decider-2b`. Registered, not yet evaluated: `clef-flash-9b` |
 | **Hosted decision APIs** | Questions sent to the provider | Provider API | Registered, awaiting evaluation/access: `dec-jev` (TypeSafe Jev via OpenRouter), `dec-openai` (OpenAI Decisions API) |
-| **LLM-as-a-judge** | Policy instructions and application context | Hosted LLM | Evaluated: `cyber-guard-per-policy` (per-policy) and `cyber-guard` (combined request/response policies), using gpt-6-luna |
+| **LLM-as-a-judge** | Policy instructions and application context | Hosted LLM | Evaluated: `cyber-guard-per-policy` (per-policy), `cyber-guard` (combined request/response policies) and `agentic-security` (drop-in, one call per hook over a recent window), all using gpt-6-luna |
 
 The [guard registry](src/guardlab/guards.yaml) includes a regex baseline. `dec-luna-emu` is a chat-LLM
 test double for the Decisions API format; its scores do not measure a hosted decision model.
 `safeguard-20b` runs locally through Ollama with supplied policies. The four approaches have different
 stage coverage and amounts of tuning, which the results below identify.
+
+**`agentic-security`** ([docs/agentic-security.md](docs/agentic-security.md)) is the drop-in guardrail for an
+existing LiteLLM Enterprise gateway. It is one Python file plus two prompt files and a config entry
+([deploy/agentic-security/](deploy/agentic-security/)), with no cache, no state and no extra services.
+
+- **Judge calls:** one before the model, and one after it only if the model calls tools. It sees the last 10
+  messages, not the system prompt.
+- **Flagged tool results:** only the injected lines are cut, so an agent can keep working.
+- **Accuracy:** on par with `cyber-guard` on single messages (held-out F1 0.93 vs 0.92; cyber 0.93 vs 0.95).
+- **Agent tasks:** better than `cyber-guard` at keeping tasks alive. On AgentDojo under attack, task success is 58%
+  vs 6% (73% with no guardrail); benign, it is 62–68% vs 62% (80% with no guardrail).
+- **Cost and speed:** 11× fewer judge tokens than `cyber-guard` without its cache, and about 2.0 s of classifier time
+  per agent step (p50).
 
 Scope is cyber-security only (OWASP Top 10 for LLM, MCP and Agentic apps; MITRE ATT&CK / ATLAS):
 prompt injection (direct and indirect), guard evasion and jailbreaks, tool poisoning, unsafe agent
@@ -501,8 +514,10 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 - [x] Select cyber policy v4 with measured defense/FPR tradeoffs; see [rounds K27–K34](docs/judge.md#cyber-rounds-k27k34-retain-v1-precision-with-selected-v3-defenses-2026-10-06).
 - [x] Prompt-section ablations, long-content windows, trajectory-aware action checks and billed streaming blocks.
 - [ ] Evaluate owner-provided production cyber cases and adaptive attacks against the guard.
-- [ ] Pass delegated user intent to tool-result checks to reduce false blocks in agent workflows.
-- [ ] Test redacting flagged tool results and continuing the task, then rerun agent-loop utility and attack success.
+- [x] `agentic-security`: drop-in guardrail with a 10-message window (user intent and drift as context), no cache,
+  surgical withholding of flagged tool results and hedged judge calls; see [docs/agentic-security.md](docs/agentic-security.md).
+- [ ] agentic-security: tune delegated-task false withholds on a separate dev set (not AgentDojo).
+- [ ] Measure protection, not just cost: rerun the agent loop with an agent model that falls for injections.
 - [ ] Add gateway alerting and a separate judge rate-limit budget; rerun ablations after policy changes.
 
 *Evaluation hardening, from Red Hat's and guardrail-showdown's benchmarks*

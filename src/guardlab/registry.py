@@ -21,6 +21,7 @@ ADAPTERS = {
     "s1guard": "guardlab.adapters.s1guard:S1Guard",
     "hf_classifier": "guardlab.adapters.hf_classifier:HFClassifier",
     "llm_judge": "guardlab.adapters.llm_judge:LLMJudge",
+    "agentic": "guardlab.adapters.agentic:AgenticGuard",
     "decision_api": "guardlab.adapters.decision_api:DecisionAPIGuard",
     "hf_generative": "guardlab.adapters.hf_generative:HFGenerative",
     "ollama_guardian": "guardlab.adapters.ollama_guardian:OllamaGuardian",

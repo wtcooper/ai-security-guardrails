@@ -50,7 +50,9 @@ def main():
     # stream=False: the shim is request/response. strict_tools=False: AgentDojo tools have optional params, which
     # OpenAI strict schemas reject (the native openai/ provider does not force strict either).
     ok, _ = eval_set(tasks, model=[f"openai-api/{arm}/{MODEL}" for arm in ARMS], model_args={"stream": False, "strict_tools": False},
-                     log_dir=log_dir, limit=2 if smoke else None, max_connections=8, max_tasks=4,
+                     log_dir=log_dir, limit=2 if smoke else None, max_tasks=4,
+                     # agents in flight per arm; each also triggers judge calls on the same OpenAI rate limit
+                     max_connections=int(os.environ.get("AGENT_MAX_CONNECTIONS", "8")),
                      fail_on_error=False, retry_attempts=1)
     sys.exit(0 if ok else 1)
 

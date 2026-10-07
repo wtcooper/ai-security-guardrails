@@ -83,6 +83,14 @@ def main():
               f"| {sum(x['blocked'] == 'request' for x in a)} | {sum(x['blocked'] == 'response' for x in a)} "
               f"| {sum(x['status'] != 200 and not x['blocked'] for x in a)} | {q(ms, .5)} / {q(ms, .95)} |")
     log = f"{run}/gateway.log"
+    lines = open(log, errors="replace").read().splitlines() if os.path.exists(log) else []
+    for arm, guards in ARMS.items():   # withheld tool results are invisible to the shim (the call succeeds)
+        hits = [line.rsplit("content ", 1)[-1].rstrip(")") for line in lines for g in guards
+                if f" {g} request tool_result redacted " in line]
+        if guards and hits:
+            print(f"\nTool results withheld by {arm}: {len(set(hits))} distinct ({len(hits)} incl. re-sends on later turns)",
+                  end="")
+    print()
     failures = sum("guard failed" in line for line in open(log, errors="replace")) if os.path.exists(log) else "n/a"
     print(f"\nGuard failures in the gateway log (checks that failed open): {failures}")
     if failures:

@@ -164,6 +164,27 @@ guards:
     stage2_effort: ""
     max_tokens: 8
 
+  # agentic-security: the drop-in enterprise guardrail (src/guardlab/agentic_security.py): one judge call per side
+  # over a 10-message window, no cache or state. In the lab the model is called directly; the gateway entry bills
+  # it through the router. Same tuned rule text as cyber-guard (evals/lab/build_agentic.py).
+  agentic-security:
+    adapter: agentic
+    family: llm-judge
+    license: OpenAI API
+    model: gpt-6-luna
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    price: {input: 0.10, cached_input: 0.01, output: 0.50}
+    include_system_prompt: false
+  agentic-security-sys:   # the same, with the application's system prompt shown to the judge as context
+    adapter: agentic
+    family: llm-judge
+    license: OpenAI API
+    model: gpt-6-luna
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    price: {input: 0.10, cached_input: 0.01, output: 0.50}
+    include_system_prompt: true
   # Ablations of cyber-guard: what each part of the prompt/harness is worth (docs/judge.md).
   judge-abl-single:
     adapter: llm_judge

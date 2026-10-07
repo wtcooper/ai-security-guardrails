@@ -88,6 +88,29 @@ guardrails:
       deadline_s: 10
       on_block: refuse
       stages: [input, conversation, tool_result, tool_definition]
+  # agentic-security: the drop-in enterprise guardrail (docs/agentic-security.md). One judge call before the model
+  # and one after it only when the reply calls tools; a 10-message window; no cache or state; judge calls billed
+  # to the caller's key through this gateway's router.
+  - guardrail_name: agentic-security
+    litellm_params:
+      guardrail: agentic_security.AgenticSecurity
+      mode: [pre_call, post_call]
+      default_on: false
+      judge_model: gpt-6-luna
+      window: 10
+      include_system_prompt: false
+      on_unavailable: allow
+      deadline_s: 10
+  - guardrail_name: agentic-security-sys   # the same, with the app's system prompt shown to the judge
+    litellm_params:
+      guardrail: agentic_security.AgenticSecurity
+      mode: [pre_call, post_call]
+      default_on: false
+      judge_model: gpt-6-luna
+      window: 10
+      include_system_prompt: true
+      on_unavailable: allow
+      deadline_s: 10
   # LAB ONLY: the decisions emulator calls OpenAI directly, so its cost is NOT in LiteLLM's spend DB.
   - guardrail_name: dec-luna-emu
     litellm_params:

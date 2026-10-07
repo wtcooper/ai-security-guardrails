@@ -25,6 +25,8 @@ providers:
   - {id: file://provider_guard.py, label: cyber-guard-per-policy, config: {guard: cyber-guard-per-policy}}
   - {id: file://provider_guard.py, label: cyber-guard-per-policy-single, config: {guard: cyber-guard-per-policy-single}}
   - {id: file://provider_guard.py, label: cyber-guard, config: {guard: cyber-guard}}
+  - {id: file://provider_guard.py, label: agentic-security, config: {guard: agentic-security}}
+  - {id: file://provider_guard.py, label: agentic-security-sys, config: {guard: agentic-security-sys}}
   - {id: file://provider_guard.py, label: cyber-guard-per-policy-think, config: {guard: cyber-guard-per-policy-think}}
   - {id: file://provider_guard.py, label: cyber-guard-combined, config: {guard: cyber-guard-combined}}
   - {id: file://provider_guard.py, label: cyber-guard-per-policy-smoke, config: {guard: cyber-guard-per-policy-smoke}}
