@@ -388,6 +388,10 @@ How the corpus, splits, scoring and reports work: [docs/lab.md](docs/lab.md). To
 
 ## Deploy any guard in the LiteLLM gateway
 
+**For production, deploy `agentic-security`.** Copy [deploy/agentic-security/](deploy/agentic-security/) into the
+gateway and add its config entry; it needs nothing else from this repository. The shared integration class below
+runs any *registry* guard, for lab evaluation and A/B tests.
+
 Registered guards share one LiteLLM integration class. Choose a guard and hooks that match its
 supported stages. The guard you evaluate is the guard you deploy.
 
@@ -479,7 +483,8 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 - self-hosted classifiers and decision models;
 - shared gateway integration, configurable blocks and verified judge chargeback;
 - placement and agent-loop studies measuring attack success and task utility;
-- 73 offline tests.
+- `agentic-security`, the drop-in guardrail for deployment (no cache; surgical withholding; verified chargeback);
+- 91 offline tests.
 
 **Roadmap** (each item is registered or scripted unless noted; runs are deferred to keep laptop load low):
 
@@ -513,7 +518,11 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 
 - [x] Select cyber policy v4 with measured defense/FPR tradeoffs; see [rounds K27–K34](docs/judge.md#cyber-rounds-k27k34-retain-v1-precision-with-selected-v3-defenses-2026-10-06).
 - [x] Prompt-section ablations, long-content windows, trajectory-aware action checks and billed streaming blocks.
-- [ ] Evaluate owner-provided production cyber cases and adaptive attacks against the guard.
+- [ ] Generalize the cyber instructions for four production gap areas: cloud-credential retrieval, operational
+  exploit payloads, web-injection payloads with filter bypass, and phishing or impersonation content. Then test
+  adaptive attacks.
+- [ ] agentic-security: close the 3-point cyber recall gap to cyber-guard (91% vs 94% held-out) by tuning on dev.
+- [ ] agentic-security: rerun the agent loop when the provider is responsive; the 2026-10-07 surgical run had 2% fail-open.
 - [x] `agentic-security`: drop-in guardrail with a 10-message window (user intent and drift as context), no cache,
   surgical withholding of flagged tool results and hedged judge calls; see [docs/agentic-security.md](docs/agentic-security.md).
 - [ ] agentic-security: tune delegated-task false withholds on a separate dev set (not AgentDojo).

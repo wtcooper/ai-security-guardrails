@@ -71,7 +71,11 @@ charged back. The judge's own calls were billed to the team key in every scenari
 
 ## 3. Recommended configuration
 
-The `cyber-guard` entry in [gateway/litellm_config.yaml](../gateway/litellm_config.yaml):
+**To deploy, use `agentic-security`** ([docs/agentic-security.md](agentic-security.md),
+[deploy/agentic-security/](../deploy/agentic-security/)). It uses the same placement: pre-call on everything
+entering inference, and post-call on tool calls only. It needs no cache, and a flagged tool result has only its
+injected lines cut. The `cyber-guard` entry below is the lab reference in
+[gateway/litellm_config.yaml](../gateway/litellm_config.yaml):
 
 ```yaml
 - guardrail_name: cyber-guard

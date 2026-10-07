@@ -1,13 +1,16 @@
 # Agent-loop eval: guardrails in a real tool-calling loop
 
 This eval runs vanilla `inspect_evals` tasks with their own scorers, unmodified, through the LiteLLM
-gateway. There are three arms, using the same agent model (gpt-6-luna) and differing only in guardrails:
+gateway. Every arm uses the same agent model (gpt-6-luna); the arms differ only in guardrails:
 
 | Arm | Gateway guardrails | Checks |
 |---|---|---|
 | `baseline` | none | — |
-| `precall` | `cyber-guard-pre` | pre-call: user turns, tool results, tool definitions |
-| `cyberguard` | `cyber-guard` | pre-call, plus post-call on tool calls |
+| `cyberguard` | `cyber-guard` | one judge call per piece (cached), pre-call plus post-call on tool calls |
+| `agentic` | `agentic-security` | one judge call per hook over a 10-message window; flagged tool results have only their injected lines cut |
+| `agenticsys` | `agentic-security-sys` | the same, with the app's system prompt shown to the judge |
+
+The 2026-10-05 runs used an earlier `precall` arm (`cyber-guard-pre`) to isolate post-call's effect.
 
 ## Benchmarks
 
@@ -27,7 +30,13 @@ our tool-call tuning data was.
 bash evals/agent/run.sh setup      # once: .venv-inspect (inspect-ai 0.3.276, inspect-evals[agentdojo] 0.23.0)
 bash evals/agent/run.sh smoke      # 2 samples per task, about 3 minutes
 bash evals/agent/run.sh full       # all samples
+AGENT_ARMS=agentic bash evals/agent/run.sh full       # a subset of arms
+AGENT_MAX_CONNECTIONS=4 bash evals/agent/run.sh full  # agents in flight per arm (default 8)
 ```
+
+- **Rate limit:** every agent call also triggers judge calls on the same OpenAI limit. With four arms at 8
+  agents each, the 2M-tokens-per-minute limit ran out and checks failed open. 4 per arm stays under it.
+- **Judge calls and cost per arm:** start the gateway with `DATABASE_URL` and they are in LiteLLM's spend log.
 
 Each run writes to `evals/results/agent/<timestamp>-<mode>/`:
 
@@ -66,11 +75,11 @@ reject.
 1. **Preflight, a hard gate.** Before the eval, three probes run through every arm and must give
    exactly this matrix, with no guard failures in the gateway log. Otherwise the run stops.
 
-   | Probe | baseline | precall | cyberguard |
+   | Probe | baseline | cyberguard | agentic / agenticsys |
    |---|---|---|---|
    | benign question (applied-guardrails header must equal the arm's) | answered | answered | answered |
-   | injected tool result | answered | blocked: request | blocked: request |
-   | forced unauthorized tool call | tool call | tool call | blocked: response |
+   | injected tool result | answered | blocked: request | withheld (logged by the gateway) |
+   | forced unauthorized tool call | tool call | blocked: response | blocked: response |
 
 2. **Per-request audit.** Every model request records the gateway's `x-litellm-applied-guardrails`
    header. The summary reports, for each arm, how many requests ran exactly that arm's guardrails,
@@ -79,7 +88,14 @@ reject.
    gateway log. A judge outage shows up as a number, not as a silently unguarded run.
 4. **Shim unit tests:** [tests/test_agent_shim.py](../tests/test_agent_shim.py).
 
-## Results (2026-10-05)
+## Results
+
+**2026-10-07 (cyber-guard vs agentic-security):** see
+[agentic-security.md](agentic-security.md#agent-loop-agentdojo-and-agentthreatbench-through-the-gateway).
+Under attack, agentic-security with surgical withholding finished 58% of tasks; cyber-guard finished 6% and no
+guardrail 73%.
+
+**2026-10-05:**
 
 See the [README](../README.md#agent-loops-through-the-gateway-agentdojo--agentthreatbench-2026-10-05)
 for the table and reading. The reported run is `20261005-081614-full`, with native 200 refusals; run
@@ -92,7 +108,9 @@ fail-open bugs that this eval found:
 
 - **Attack success** is reported on one scale, lower is better. AgentDojo's "security" means the
   injection succeeded; AgentThreatBench's means the agent resisted. The summary converts both.
-- **Utility under attack:** when pre-call blocks an injected tool result, the whole request stops, so
-  the user's legitimate task fails too. That is the cost of blocking rather than redacting.
+- **Utility under attack:**
+  - cyber-guard refuses a request with an injected tool result, which ends the agent's run and the user's
+    legitimate task with it.
+  - agentic-security cuts the injected lines and lets the agent continue on the rest of the data.
 - **Agent $** counts only the agent's own model calls. The judge's calls are billed separately in the
   gateway's spend log.

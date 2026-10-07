@@ -34,8 +34,17 @@ request can take, using a fresh team and one key per path, and checks the spend 
 
 For every path, the key's spend equals the sum of its rows and the team's spend equals the sum over its keys.
 
-**Results:** **CHARGEBACK OK** for `cyber-guard`, `cyber-guard-gw` and `cyber-guard-per-policy-gw`, and for
-`cyber-guard-pre` (run with `--pre-call-only`).
+**Results:**
+- **`agentic-security` (2026-10-07): CHARGEBACK OK** on all seven paths. That includes a withheld tool result and
+  one with lines cut, which adds the call that finds the injected lines. Hedged duplicate calls are left to finish,
+  so they are billed too.
+- **Earlier:** **CHARGEBACK OK** for `cyber-guard`, `cyber-guard-gw`, `cyber-guard-per-policy-gw`, and
+  `cyber-guard-pre` (run with `--pre-call-only`).
+
+**Billing identity comes from the proxy, not the client.** agentic-security takes the caller's key metadata only from
+the dict holding LiteLLM's authenticated `UserAPIKeyAuth` object, which a client's JSON cannot create. Without that,
+a caller could send its own `metadata` and bill its judge calls to another key. The lab's `LabGuardrail` (behind
+cyber-guard) still merges both metadata fields; it is lab-only, but should get the same fix if it is ever deployed.
 
 ### What makes every path billable
 
@@ -57,7 +66,7 @@ For every path, the key's spend equals the sum of its rows and the team's spend 
 - **`on_block: error`.** Post-call-blocked inference is recorded as a $0 failure. Only the lab entries
   that need 400 messages use it.
 - **Lab-only entries `cyber-guard-per-policy` and `dec-luna-emu`.** They call OpenAI directly, so their judge cost
-  never reaches LiteLLM. Deploy `cyber-guard` or a `-gw` entry instead.
+  never reaches LiteLLM. Deploy `agentic-security` instead.
 - **A judge call that times out** (20 s) is recorded as a $0 failure, even though the provider may bill
   a partial generation. This is rare: the normal p95 is about 3 s.
 
