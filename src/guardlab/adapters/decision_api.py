@@ -30,3 +30,13 @@ class DecisionAPIGuard(S1Guard):
                 self._backend = JevHTTPBackend(c["base_url"], c["path"] or "/v1/systemone", c["api_key_env"],
                                                c["model"], self._timeout, c["unwrap"])
         return super()._load()
+
+    def _check(self, case):
+        self._load()   # creates the backend on first use
+        spent = getattr(self._backend, "spent", None)
+        if spent is not None:
+            spent.usd = 0.0
+        r = super()._check(case)
+        if spent is not None:
+            r.cost_usd = spent.usd   # all decision calls this check made (Jev-family backends)
+        return r

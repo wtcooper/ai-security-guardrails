@@ -4,6 +4,7 @@ Access errors (403 preview not enabled, 429, 5xx, timeouts) raise guardlab.Unava
 reports `unavailable` instead of a verdict."""
 
 import os
+import threading
 
 import httpx
 
@@ -55,6 +56,11 @@ class JevHTTPBackend(_HTTP):
                  unwrap="", transport=None):
         super().__init__(base_url, path, api_key_env, model, timeout, transport)
         self._unwrap = unwrap
+        self.spent = threading.local()   # this thread's provider-reported cost since the caller last reset it
 
     def predict(self, state: dict, questions: dict) -> dict:
-        return from_jev(self._post({"model": self._model, "state": state, "questions": questions}), self._unwrap)
+        resp = self._post({"model": self._model, "state": state, "questions": questions})
+        cost = (resp.get("usage") or {}).get("cost")   # OpenRouter reports each call's USD cost
+        if cost is not None:
+            self.spent.usd = getattr(self.spent, "usd", 0.0) + float(cost)
+        return from_jev(resp, self._unwrap)

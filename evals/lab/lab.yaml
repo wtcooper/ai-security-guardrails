@@ -38,6 +38,7 @@ providers:
   - {id: file://provider_guard.py, label: judge-abl-withexamples, config: {guard: judge-abl-withexamples}}
   - {id: file://provider_guard.py, label: dec-luna-emu, config: {guard: dec-luna-emu}}
   - {id: file://provider_guard.py, label: dec-jev, config: {guard: dec-jev}}
+  - {id: file://provider_guard.py, label: jev-tuned, config: {guard: jev-tuned}}
   - {id: file://provider_guard.py, label: strands-decider-2b, config: {guard: strands-decider-2b, workers: 1}}
   - {id: file://provider_guard.py, label: clef-flash-9b, config: {guard: clef-flash-9b, workers: 1}}
   - {id: file://provider_guard.py, label: pg2-86m, config: {guard: pg2-86m, workers: 1}}

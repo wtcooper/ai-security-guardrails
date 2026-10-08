@@ -6,8 +6,44 @@ self-hosted decision models, hosted decision APIs and LLM-as-a-judge. Measure de
 false positives, latency, cost and task utility; then tune, fine-tune or integrate a guard through
 the same interface used for evaluation.
 
-Our custom work includes policy tuning for an LLM judge and a fine-tuned System One decision model.
-These sit alongside stock guard models and provider APIs in the comparison.
+## Where we're working now
+
+Active work targets a runtime guardrail for an existing LiteLLM Enterprise gateway: high detection, few false
+positives, latency and cost that hold up at hundreds of millions of requests, and agents that keep working. The best
+option found so far in each approach:
+
+| Approach | Best option today | Quality | Latency per check (p50) | Status |
+|---|---|---|---|---|
+| **LLM-as-a-judge** | **`agentic-security`** (gpt-6-luna) | held-out F1 0.93 (cyber 0.93). AgentDojo task success under attack 56%, vs 6% for `cyber-guard` | about 0.9 s; at most 2 judge calls per agent step | **Active, ready to deploy:** drop-in, no cache |
+| **Hosted decision API** | **`jev-tuned`** (TypeSafe Jev via OpenRouter) | dev F1 0.945 (cyber 0.964, tool calls 0.878) | **about 0.21 s** | **Active, evaluating:** held-out run pending. Best as a pre-filter that clears about half of benign traffic before the judge |
+| Self-hosted classifier | `safeguard-20b` (policy-following); `sentinel-v2` (fastest useful) | F1 0.88; 0.77, user-side text only | 3.2 s; 137 ms | Benchmarked; not under active tuning |
+| Self-hosted decision model | `s1-v4` (our Laya fine-tune) | F1 0.73 | 148 ms | Paused |
+
+Classifier and decision-model rows come from the historical `rep-test` comparison below. Jev's numbers are from
+dev data until its held-out run.
+
+**`agentic-security`** ([docs](docs/agentic-security.md), [deploy/agentic-security/](deploy/agentic-security/)) is
+one Python file, two prompt files and a config entry, with no cache, no state and no extra services.
+
+- **Judge calls:** one before the model, and one after it only if the model calls tools. It sees the last 10
+  messages, not the system prompt.
+- **Flagged tool results:** a second call cuts only the injected lines, so the agent keeps working.
+- **Accuracy:** on par with `cyber-guard` on single messages, held-out F1 0.93 vs 0.92 (cyber 0.93 vs 0.95).
+- **Agent tasks:** AgentDojo task success is 56% under attack and 70% on benign tasks, vs 6% and 61% for
+  `cyber-guard` (73% and 78% with no guardrail).
+- **Protection:** with an agent that falls for injections (Gemma 4 e2b), attack success fell from 42% to 0%.
+- **Cost and speed:** 11× fewer judge tokens than `cyber-guard` without its cache, and about 2.0 s of classifier time
+  per agent step.
+
+**`jev-tuned`** ([docs](docs/jev-evaluation.md)) is a hosted decision model: one call per check returns a
+probability for each security question.
+
+- **Questions:** given our judge's own tuned policies as questions, and the user's request as context for tool calls,
+  it matched or beat the LLM judges on user messages, tool results and tool definitions on dev.
+- **Speed and cost:** p50 0.21 s, p95 0.30 s, about $0.07 per 1k checks.
+- **Weak spot:** tool calls, F1 0.878 vs the judge's 0.92.
+- **As a pre-filter:** if it clears checks it scores below 0.15 and the judge decides the rest, the judge's accuracy
+  and false-positive rate are unchanged, and about half of legitimate traffic needs no judge call.
 
 ## Four guardrail approaches
 
@@ -15,27 +51,13 @@ These sit alongside stock guard models and provider APIs in the comparison.
 |---|---|---|---|
 | **Self-hosted classifiers** | Fixed training task or a supplied classification policy | Local models | Evaluated: Prompt Guard 2, Sentinel v2, DeBERTa, Llama Guard 4, Qwen3Guard, Shieldstral, Granite Guardian, Nemotron and gpt-oss-safeguard |
 | **Self-hosted decision models** | Questions and context supplied to the model; weights can be fine-tuned | Local models | Evaluated: `s1-zeroshot` (Laya), `s1-v4` (our Laya fine-tune), `strands-decider-2b`. Registered, not yet evaluated: `clef-flash-9b` |
-| **Hosted decision APIs** | Questions sent to the provider | Provider API | Registered, awaiting evaluation/access: `dec-jev` (TypeSafe Jev via OpenRouter), `dec-openai` (OpenAI Decisions API) |
+| **Hosted decision APIs** | Questions sent to the provider | Provider API | Evaluated on dev: `jev-tuned` and `dec-jev` (TypeSafe Jev via OpenRouter; held-out run pending). Awaiting access: `dec-openai` (OpenAI Decisions API) |
 | **LLM-as-a-judge** | Policy instructions and application context | Hosted LLM | Evaluated: `cyber-guard-per-policy` (per-policy), `cyber-guard` (combined request/response policies) and `agentic-security` (drop-in, one call per hook over a recent window), all using gpt-6-luna |
 
 The [guard registry](src/guardlab/guards.yaml) includes a regex baseline. `dec-luna-emu` is a chat-LLM
 test double for the Decisions API format; its scores do not measure a hosted decision model.
 `safeguard-20b` runs locally through Ollama with supplied policies. The four approaches have different
 stage coverage and amounts of tuning, which the results below identify.
-
-**`agentic-security`** ([docs/agentic-security.md](docs/agentic-security.md)) is the drop-in guardrail for an
-existing LiteLLM Enterprise gateway. It is one Python file plus two prompt files and a config entry
-([deploy/agentic-security/](deploy/agentic-security/)), with no cache, no state and no extra services.
-
-- **Judge calls:** one before the model, and one after it only if the model calls tools. It sees the last 10
-  messages, not the system prompt.
-- **Flagged tool results:** only the injected lines are cut, so an agent can keep working.
-- **Accuracy:** on par with `cyber-guard` on single messages (held-out F1 0.93 vs 0.92; cyber 0.93 vs 0.95).
-- **Agent tasks:** better than `cyber-guard` at keeping tasks alive. On AgentDojo under attack, task success is 56%
-  vs 6% (73% with no guardrail); benign, 70% vs 61% (78% with no guardrail).
-- **Protection:** with a weaker agent that falls for injections (Gemma 4 e2b), attack success fell from 42% to 0%.
-- **Cost and speed:** 11× fewer judge tokens than `cyber-guard` without its cache, and about 2.0 s of classifier time
-  per agent step (p50).
 
 Scope is cyber-security only (OWASP Top 10 for LLM, MCP and Agentic apps; MITRE ATT&CK / ATLAS):
 prompt injection (direct and indirect), guard evasion and jailbreaks, tool poisoning, unsafe agent
@@ -98,11 +120,26 @@ adds general target-profiling and deceptive-identity rules. Its frozen validatio
 of attacks with **3.03%** false positives; the comparison below shows the defense/false-positive
 tradeoff. Cyber **policy v4** and **`s1-v4` model weights** are separate version histories.
 
+### Decision-question tuning (hosted decision models)
+
+[`JevGuard`](src/guardlab/adapters/jev.py) asks a decision model one call per check, with questions per stage in a
+YAML file. A question can be `policy: <name>`, which hands the model the judge's own tuned policy text from the files
+above, so policy tuning carries over to decision models. Tool-call questions get the user's request and the
+agent's earlier steps as context. Tune with [evals/lab/experiments/jev_tune.py](evals/lab/experiments/jev_tune.py)
+on dev slices; the rounds are in [docs/jev-evaluation.md](docs/jev-evaluation.md).
+
 To add a different guard, implement the shared interface and register it; see
 [adding a guard](docs/lab.md#adding-a-guard). Evaluation, reporting and gateway integration use that
 same adapter.
 
 ## Results
+
+**Latest results for active work:**
+- `agentic-security` vs `cyber-guard`: held-out accuracy, system-prompt test, latency, and agent loops with
+  gpt-6-luna and Gemma 4, in [docs/agentic-security.md](docs/agentic-security.md).
+- Jev tuning rounds and the cascade analysis are in [docs/jev-evaluation.md](docs/jev-evaluation.md).
+
+The tables below are the historical cross-approach comparison.
 
 ### Combined cyber benchmark (`rep-test`, 407 cases; historical comparison)
 
@@ -491,8 +528,11 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 
 *Hosted decision APIs*
 
-- [ ] `dec-jev`: add `OPENROUTER_API_KEY`, then run smoke, rep-dev/rep-test and public. Jev is the
-  reference hosted decision model in this comparison.
+- [x] Jev, tuned on dev (`jev-tuned`, [docs/jev-evaluation.md](docs/jev-evaluation.md)). With the judge's own policy
+  text as questions it matches or beats the LLM judges on user messages, tool results and tool definitions, at about
+  0.2 s per check; tool calls stay weaker (F1 0.878 vs 0.92). As a pre-filter it clears about half of benign traffic
+  with no loss of the judge's precision.
+- [ ] Jev: one held-out run of `jev-tuned` (blocked: OpenRouter credits), then a drop-in `deploy/jev-prefilter/`.
 - [ ] `dec-openai`: rerun once OpenAI Decisions API access is granted (currently 403), then retire
   `dec-luna-emu` from the results.
 - [ ] Optional: Perplexity's Decisions API, and Cloudflare Clef hosted on Workers AI (needs an account

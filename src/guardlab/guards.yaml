@@ -312,6 +312,36 @@ guards:
     model: gpt-6-luna
     policy: ${REPO}/src/guardlab/decisions/policies/decisions.yaml
 
+  jev-j1:   # Jev in its deployable shape: one call per check, per-stage questions (docs/jev-evaluation.md)
+    adapter: jev
+    family: decision-api
+    license: TypeSafe API (via OpenRouter)
+    policy: ${REPO}/src/guardlab/decisions/policies/jev/j1.yaml
+  jev-j2:
+    adapter: jev
+    family: decision-api
+    license: TypeSafe API (via OpenRouter)
+    policy: ${REPO}/src/guardlab/decisions/policies/jev/j2.yaml
+  jev-j3:
+    adapter: jev
+    family: decision-api
+    license: TypeSafe API (via OpenRouter)
+    policy: ${REPO}/src/guardlab/decisions/policies/jev/j3.yaml
+  jev-j4:
+    adapter: jev
+    family: decision-api
+    license: TypeSafe API (via OpenRouter)
+    policy: ${REPO}/src/guardlab/decisions/policies/jev/j4.yaml
+  jev-j5:
+    adapter: jev
+    family: decision-api
+    license: TypeSafe API (via OpenRouter)
+    policy: ${REPO}/src/guardlab/decisions/policies/jev/j5.yaml
+  jev-tuned:   # frozen Jev configuration (docs/jev-evaluation.md)
+    adapter: jev
+    family: decision-api
+    license: TypeSafe API (via OpenRouter)
+    policy: ${REPO}/src/guardlab/decisions/policies/jev/tuned.yaml
   dec-jev:                 # TypeSafe Jev (hosted reference decision model) via OpenRouter; needs OPENROUTER_API_KEY
     adapter: decision_api
     family: decision-api
