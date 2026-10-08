@@ -332,9 +332,12 @@ Setup:
 - **gpt-6-luna resists almost every attack on its own.** It ignored all 96 of AgentDojo's default
   injections. One AgentThreatBench attack got through, and both guarded arms stopped it.
 - **Detecting an injection ends the user's task.** Pre-call caught the injected tool result in about 95%
-  of attack runs, but refusing the turn also ends the user's legitimate task (75% → 6%). Returning a 200
-  refusal instead of a 400 doesn't change that, because the agent stops either way. Only redacting the
-  flagged tool result and letting the agent continue would. That is the next item on the roadmap.
+  of attack runs, but refusing the turn also ends the user's legitimate task (75% → 6%). Only removing the
+  injected text and letting the agent continue fixes that, which `agentic-security` now does (56% task
+  success under attack). This run does not compare a 200 refusal with a raw 400: the eval shim turned every
+  400 into a 200 refusal, so the agent never saw a 400. The case for 200 comes from how SDKs and agent
+  frameworks treat errors (a 400 is never retried and ends the run) and from billing
+  ([research](docs/research/LiteLLM%20agent%20guardrail%20practices.md)).
 - **False blocks on benign tasks cost 13 points** (79% → 66%). The main cause is instructions the user
   explicitly delegated ("do the tasks on my TODO list at <url>"). The tool-result check doesn't see the
   user's request, so these look like injections.
@@ -598,6 +601,13 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 - [ ] Definition sensitivity: run each decision model with the stock questions and with the
   judge's tuned policy text as question instructions.
 - [ ] Fine-tune Strands Decider 2B on our dev split (its recipe is published) and compare with laya-tuned-0.4b-stockq.
+
+*Cloud guardrail APIs*
+
+- [ ] Google Cloud Model Armor on both held-out test sets ([plan](docs/model-armor-plan.md)). Needs a GCP project
+  with billing, the Model Armor API enabled and gcloud login credentials; the Vertex API key won't work. Then a
+  thin adapter. A full run fits in the free tier.
+- [ ] AWS Bedrock Guardrails and Azure Prompt Shields on the same sets, to match the work comparison.
 
 *Self-hosted classifiers*
 

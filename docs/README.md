@@ -7,6 +7,7 @@ and evaluating their gateway behavior.
 |---|---|
 | [benchmark.md](benchmark.md) | The combined cyber benchmark (OWASP LLM/MCP/Agentic + MITRE coverage map) and the five public benchmarks |
 | [lab.md](lab.md) | How the evaluation works: corpus, splits, run modes, scoring, adding a guard, gotchas |
+| [model-armor-plan.md](model-armor-plan.md) | Plan for adding Google Cloud Model Armor: GCP setup checklist, adapter design, LiteLLM gaps |
 | [decision-model-size.md](decision-model-size.md) | Self-hosted decision models by size and fine-tuning (Laya 0.4B to Kev-9B) vs Jev on the two held-out test sets |
 | [data-provenance.md](data-provenance.md) | Training and evaluation corpus: every source, licence, split, exclusion and contamination control; model-weight licences; future data sources |
 | [agent-eval.md](agent-eval.md) | Agent-loop eval: vanilla Inspect AgentDojo + AgentThreatBench through the gateway, three guardrail arms, wiring checks |
@@ -23,4 +24,5 @@ and evaluating their gateway behavior.
 | [training-methods.md](training-methods.md) | s1guard fine-tuning methods writeup (v1–v4) |
 | [research/oss-guardrails.md](research/oss-guardrails.md) | Vetted open-source guardrail classifier shortlist (2026-10) |
 | [research/auto-mode-judges.md](research/auto-mode-judges.md) | How coding-agent auto modes judge actions; lessons for our judge |
+| [research/LiteLLM agent guardrail practices.md](research/LiteLLM%20agent%20guardrail%20practices.md) | LiteLLM guardrails for agent loops: how to return blocks, industry practice, and how agentic-security compares (2026-10-08) |
 | [research/system-one-decision-models-landscape.md](research/system-one-decision-models-landscape.md) | Decision-model landscape review (2026-10-03), with notes in [research/notes/](research/notes/) |

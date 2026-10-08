@@ -1,0 +1,30 @@
+[
+  {
+    "sha": "f0b25a62ae0b9d85",
+    "generated_at": "2026-10-08T01:14:05+00:00",
+    "scores": {
+      "framing": 3,
+      "planning": 2,
+      "context": 2,
+      "verification": 4,
+      "steering": 3,
+      "scope": 1,
+      "vcs": 2,
+      "delegation": 3
+    }
+  },
+  {
+    "sha": "0f9f6d5b70e3a753",
+    "generated_at": "2026-10-08T12:22:37+00:00",
+    "scores": {
+      "framing": 3,
+      "planning": 2,
+      "context": 2,
+      "verification": 4,
+      "steering": 3,
+      "scope": 1,
+      "vcs": 3,
+      "delegation": 3
+    }
+  }
+]

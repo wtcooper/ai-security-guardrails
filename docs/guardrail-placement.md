@@ -153,9 +153,9 @@ evaluation corpus and in the gateway.
 - **Final text replies are unchecked** in this configuration. If leaks or exfiltration links in replies
   matter, add a cheap deterministic output filter (a URL allowlist for markdown links and images, secret
   patterns) rather than another judge call.
-- **A flagged tool result blocks the whole request,** even when the agent would have ignored the
-  injection. A softer option, not yet implemented, is to replace the flagged tool result with a notice
-  and let the agent continue.
+- **A flagged tool result blocks the whole request** in the `cyber-guard` configuration studied here, even
+  when the agent would have ignored the injection. `agentic-security` instead cuts the injected lines (or
+  withholds the result) and lets the agent continue ([agentic-security.md](agentic-security.md)).
 - **The action check is a filter, not a boundary.** It catches about 80% of unsafe calls with 10–12%
   false blocks on this data. Destructive tools still need their own authorization (confirmation
   prompts, scoped credentials).

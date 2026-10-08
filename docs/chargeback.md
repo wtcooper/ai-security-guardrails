@@ -67,7 +67,7 @@ cyber-guard) still merges both metadata fields; it is lab-only, but should get t
   that need 400 messages use it.
 - **Lab-only entries `cyber-guard-per-policy` and `dec-luna-emu`.** They call OpenAI directly, so their judge cost
   never reaches LiteLLM. Deploy `agentic-security` instead.
-- **A judge call that times out** (20 s) is recorded as a $0 failure, even though the provider may bill
+- **A judge call that times out** (8 s per call in `agentic-security`, `judge_timeout_s`) is recorded as a $0 failure, even though the provider may bill
   a partial generation. This is rare: the normal p95 is about 3 s.
 
 ## Reproduce

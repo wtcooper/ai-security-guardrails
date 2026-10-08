@@ -262,9 +262,38 @@ the first 12 AgentDojo attacks, which are all in the **banking** suite, so the A
 - **Run cost:** classifier latency was higher here (request p50 10.3 s, including Gemma's own slow local inference),
   and a withheld result was re-cut on every later turn: 22 distinct results, 1,040 times.
 
+### Reliability fixes (2026-10-08)
+
+A review of LiteLLM's guardrail framework and industry practice
+([research](research/LiteLLM%20agent%20guardrail%20practices.md)) found gaps where the guard failed quietly in
+the attacker's favour. All of them are fixed in the drop-in file, with tests (`tests/test_agentic_security.py`, 26
+tests):
+
+| Gap | Fix |
+|---|---|
+| A safety block on the judge call itself (for example OpenAI `cyber_policy`, or an empty `content_filter` reply) was treated as "judge unavailable", so the request **failed open**: the riskiest content was the most likely to pass | The entries in that call count as flagged. Judge calls carry a hashed per-caller `safety_identifier` |
+| On Anthropic `/v1/messages` and the Responses API, the tool-call check saw little or none of the conversation, and a blocked reply fell back to LiteLLM's raised refusal (not billed, odd shapes) | The conversation is read from Anthropic content blocks and Responses input items; blocked replies are rewritten in place on all three APIs and stay billed |
+| LiteLLM logged every run that returned normally as `success`, fail-opens and withholds included | Each run records its real status: `success`, `guardrail_intervened` or `guardrail_failed_to_respond` |
+| A cut tool result reached the model again once the window scrolled past it (after about five tool round-trips) | Every tool result since the user's last message is re-rated (`tool_results: turn`), and the user's last message stays in view |
+| LiteLLM settings could silently hide tool results or user messages from the guard | An error is logged when one is on; `scan_only_tool_results` is rejected at startup |
+| The refusal didn't tell the agent what to do | It now says not to retry or work around the block, to tell the user, and to continue other allowed work |
+
+End to end on LiteLLM 1.103.2, every model call stayed billed to the caller on all 7 paths of all three APIs.
+Two gaps remain, both in LiteLLM itself:
+- it doesn't run post-call guardrails on streamed `/v1/messages` replies, so a flagged tool call reaches the
+  client;
+- its own Responses-API refusal for a pre-call block is malformed (the model still doesn't run).
+
+Details are in [the deploy README](../deploy/agentic-security/README.md).
+
 ## Known limits and next steps
 
-- **Scroll-out:** a flagged tool result older than the window reaches the model again. The window is configurable.
+- **LiteLLM gaps:** post-call checks don't run on streamed Anthropic Messages replies, and the pre-call refusal on
+  the Responses API is malformed (above). Both need upstream fixes, or a custom streaming hook in this guard.
+- **Scroll-out across turns:** with `tool_results: turn`, a cut tool result from an earlier user turn is no longer
+  re-rated after the user's next message. With `tool_results: window`, one older than the window reaches the model
+  again.
+- **Judge cost on long agent loops:** `tool_results: turn` re-rates every tool result of the turn on every step.
 - **Mid-session tool changes:** tool definitions changed within a user turn aren't re-checked.
 - **Long content:** entries over 24,000 characters are trimmed to their start and end for the judge, and are
   withheld whole if flagged.

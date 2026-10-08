@@ -22,7 +22,12 @@ Exits 1 on any miss.
     docker run -d --name guardlab-litellm-db -e POSTGRES_USER=litellm -e POSTGRES_PASSWORD=litellm-local \\
         -e POSTGRES_DB=litellm -p 127.0.0.1:5433:5432 postgres:17-alpine
     DATABASE_URL=postgresql://litellm:litellm-local@127.0.0.1:5433/litellm bash gateway/start_gateway.sh
-    uv run python evals/lab/chargeback_check.py [--guardrail cyber-guard] [--gateway http://localhost:4000]
+    uv run python evals/lab/chargeback_check.py [--guardrail cyber-guard] [--gateway http://localhost:4000] \
+        [--endpoint chat|messages|responses]
+
+--endpoint sends the same paths as Chat Completions (default), Anthropic Messages (/v1/messages) or the Responses API
+(/v1/responses). A block must then reach the client as that API's refusal: finish_reason "content_filter" (chat),
+or the policy message with no tool call (messages, responses).
 """
 
 import argparse
@@ -70,17 +75,94 @@ def sql(query: str) -> list:
     return [line.split("\t") for line in out.strip().splitlines() if line]
 
 
-def send(c: httpx.Client, key: str, guardrail: str, body: dict, stream: bool) -> tuple:
-    """(finish_reason, tool-call chunks or calls the client received)"""
+def to_anthropic(body: dict) -> dict:
+    """A Chat Completions body as an Anthropic Messages body."""
+    out = {"max_tokens": 1000, "messages": []}
+    for m in body["messages"]:
+        if m["role"] == "system":
+            out["system"] = m["content"]
+        elif m["role"] == "tool":
+            out["messages"].append({"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": m["tool_call_id"], "content": m["content"]}]})
+        elif m.get("tool_calls"):
+            out["messages"].append({"role": "assistant", "content": [
+                {"type": "tool_use", "id": tc["id"], "name": tc["function"]["name"],
+                 "input": json.loads(tc["function"]["arguments"])} for tc in m["tool_calls"]]})
+        else:
+            out["messages"].append({"role": m["role"], "content": m["content"]})
+    if body.get("tools"):
+        out["tools"] = [{"name": t["function"]["name"], "description": t["function"]["description"],
+                         "input_schema": t["function"]["parameters"]} for t in body["tools"]]
+    if body.get("tool_choice"):
+        out["tool_choice"] = {"type": "tool", "name": body["tool_choice"]["function"]["name"]}
+    return out
+
+
+def to_responses(body: dict) -> dict:
+    """A Chat Completions body as a Responses API body."""
+    out = {"max_output_tokens": 1000, "reasoning": {"effort": "none"}, "input": []}
+    for m in body["messages"]:
+        if m["role"] == "system":
+            out["instructions"] = m["content"]
+        elif m["role"] == "tool":
+            out["input"].append({"type": "function_call_output", "call_id": m["tool_call_id"], "output": m["content"]})
+        elif m.get("tool_calls"):
+            out["input"] += [{"type": "function_call", "call_id": tc["id"], "name": tc["function"]["name"],
+                              "arguments": tc["function"]["arguments"]} for tc in m["tool_calls"]]
+        else:
+            out["input"].append({"role": m["role"], "content": m["content"]})
+    if body.get("tools"):
+        out["tools"] = [{"type": "function", **t["function"]} for t in body["tools"]]
+    if body.get("tool_choice"):
+        out["tool_choice"] = {"type": "function", "name": body["tool_choice"]["function"]["name"]}
+    return out
+
+
+def send_other(c: httpx.Client, headers: dict, endpoint: str, req: dict, stream: bool) -> tuple:
+    """(refused, tool calls or tool-call events the client received) on /v1/messages or /v1/responses."""
+    path = "/v1/messages" if endpoint == "messages" else "/v1/responses"
+    if not stream:
+        j = c.post(path, headers=headers, json=req).raise_for_status().json()
+        return refusal_or_calls(endpoint, j)
+    text, calls = "", 0
+    with c.stream("POST", path, headers=headers, json=req | {"stream": True}) as r:
+        r.raise_for_status()
+        if "text/event-stream" not in r.headers.get("content-type", ""):   # a block answered as plain JSON
+            return refusal_or_calls(endpoint, json.loads(r.read()))
+        for line in r.iter_lines():
+            if not line.startswith("data: ") or line[6:] == "[DONE]":
+                continue
+            e = json.loads(line[6:])
+            block = e.get("content_block") or e.get("item") or {}
+            calls += block.get("type") in ("tool_use", "function_call")
+            text += (e.get("delta") or {}).get("text", "") if isinstance(e.get("delta"), dict) else (e.get("delta") or "")
+    return "security policy" in text, calls
+
+
+def refusal_or_calls(endpoint: str, j: dict) -> tuple:
+    if endpoint == "messages":
+        blocks = j.get("content") or []
+        text = " ".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+        return "security policy" in text, sum(b.get("type") == "tool_use" for b in blocks)
+    items = j.get("output") or []
+    text = " ".join(p.get("text", "") for o in items if o.get("type") == "message" for p in o.get("content") or [])
+    return "security policy" in text, sum(o.get("type") == "function_call" for o in items)
+
+
+def send(c: httpx.Client, key: str, guardrail: str, body: dict, stream: bool, endpoint: str = "chat") -> tuple:
+    """(blocked as that API signals it, tool-call chunks or calls the client received)"""
     body = json.loads(json.dumps(body))
     first_user = next(m for m in body["messages"] if m["role"] == "user")
     first_user["content"] += f" (ref {key[-8:]})"   # unique per path, so no guard verdict comes from the cache
-    req = {"model": "gpt-6-luna", "guardrails": [guardrail], "max_completion_tokens": 1000, "reasoning_effort": "none"} | body
     headers = {"Authorization": f"Bearer {key}"}
+    if endpoint != "chat":
+        req = {"model": "gpt-6-luna", "guardrails": [guardrail]} | (to_anthropic if endpoint == "messages" else to_responses)(body)
+        return send_other(c, headers, endpoint, req, stream)
+    req = {"model": "gpt-6-luna", "guardrails": [guardrail], "max_completion_tokens": 1000, "reasoning_effort": "none"} | body
     if not stream:
         j = c.post("/v1/chat/completions", headers=headers, json=req).raise_for_status().json()
         ch = j["choices"][0]
-        return ch.get("finish_reason"), len(ch["message"].get("tool_calls") or [])
+        return ch.get("finish_reason") == "content_filter", len(ch["message"].get("tool_calls") or [])
     finish, tool_chunks = None, 0
     with c.stream("POST", "/v1/chat/completions", headers=headers,
                   json=req | {"stream": True, "stream_options": {"include_usage": True}}) as r:
@@ -90,7 +172,7 @@ def send(c: httpx.Client, key: str, guardrail: str, body: dict, stream: bool) ->
                 for ch in json.loads(line[6:]).get("choices") or []:
                     finish = ch.get("finish_reason") or finish
                     tool_chunks += bool((ch.get("delta") or {}).get("tool_calls"))
-    return finish, tool_chunks
+    return finish == "content_filter", tool_chunks
 
 
 def main() -> int:
@@ -98,10 +180,11 @@ def main() -> int:
     ap.add_argument("--guardrail", default="cyber-guard")
     ap.add_argument("--gateway", default="http://localhost:4000")
     ap.add_argument("--pre-call-only", action="store_true", help="the guardrail has no post-call check (cyber-guard-pre)")
+    ap.add_argument("--endpoint", choices=("chat", "messages", "responses"), default="chat")
     a = ap.parse_args()
     c = httpx.Client(base_url=a.gateway, timeout=120)
     run = uuid.uuid4().hex[:6]
-    team = c.post("/team/new", headers=MASTER, json={"team_alias": f"chargeback-{run}"}).raise_for_status().json()
+    team = c.post("/team/new", headers=MASTER, json={"team_alias": f"chargeback-{a.endpoint}-{run}"}).raise_for_status().json()
     keys, problems = {}, []
     paths = {k: v for k, v in PATHS.items() if not k.startswith("tool result") or a.guardrail.startswith("agentic-security")}
     for name, (body, stream, _, blocked) in paths.items():
@@ -109,9 +192,9 @@ def main() -> int:
         k = c.post("/key/generate", headers=MASTER, json={"team_id": team["team_id"], "key_alias": f"{name}-{run}"}
                    ).raise_for_status().json()
         keys[name] = k["token"]
-        finish, tools = send(c, k["key"], a.guardrail, body, stream)
-        if blocked and (finish != "content_filter" or tools):
-            problems.append(f"{name}: not blocked as expected (finish_reason={finish}, tool calls/chunks={tools})")
+        refused, tools = send(c, k["key"], a.guardrail, body, stream, a.endpoint)
+        if blocked and (not refused or tools):
+            problems.append(f"{name}: not blocked as expected (refusal={refused}, tool calls/chunks={tools})")
     time.sleep(25)   # spend logs are written in batches
     print(f"{'path':26s} {'inference':>22s} {'judge calls':>16s} {'key spend':>12s}")
     total = 0.0
