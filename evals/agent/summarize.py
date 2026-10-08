@@ -55,7 +55,9 @@ def main():
                 held = v["security"] == "C"
                 r["asr"].append(held if bench.startswith("AgentDojo") else not held)
             r["secs"].append(s.total_time or 0)
-            for u in (s.model_usage or {}).values():
+            for model, u in (s.model_usage or {}).items():
+                if "luna" not in model:   # a local agent model (e.g. gemma4 on Ollama) costs nothing per token
+                    continue
                 # Inspect's input_tokens already excludes cache reads/writes
                 r["usd"] += ((u.input_tokens + (u.input_tokens_cache_write or 0)) * PRICE["input"]
                              + (u.input_tokens_cache_read or 0) * PRICE["cached"] + u.output_tokens * PRICE["output"]) / 1e6

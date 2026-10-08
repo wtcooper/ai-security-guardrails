@@ -31,8 +31,9 @@ existing LiteLLM Enterprise gateway. It is one Python file plus two prompt files
   messages, not the system prompt.
 - **Flagged tool results:** only the injected lines are cut, so an agent can keep working.
 - **Accuracy:** on par with `cyber-guard` on single messages (held-out F1 0.93 vs 0.92; cyber 0.93 vs 0.95).
-- **Agent tasks:** better than `cyber-guard` at keeping tasks alive. On AgentDojo under attack, task success is 58%
-  vs 6% (73% with no guardrail); benign, it is 62–68% vs 62% (80% with no guardrail).
+- **Agent tasks:** better than `cyber-guard` at keeping tasks alive. On AgentDojo under attack, task success is 56%
+  vs 6% (73% with no guardrail); benign, 70% vs 61% (78% with no guardrail).
+- **Protection:** with a weaker agent that falls for injections (Gemma 4 e2b), attack success fell from 42% to 0%.
 - **Cost and speed:** 11× fewer judge tokens than `cyber-guard` without its cache, and about 2.0 s of classifier time
   per agent step (p50).
 
@@ -521,12 +522,14 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 - [ ] Generalize the cyber instructions for four production gap areas: cloud-credential retrieval, operational
   exploit payloads, web-injection payloads with filter bypass, and phishing or impersonation content. Then test
   adaptive attacks.
-- [ ] agentic-security: close the 3-point cyber recall gap to cyber-guard (91% vs 94% held-out) by tuning on dev.
-- [ ] agentic-security: rerun the agent loop when the provider is responsive; the 2026-10-07 surgical run had 2% fail-open.
+- [ ] agentic-security: close the 3-point cyber recall gap to cyber-guard (91% vs 94% held-out). Framing-only tuning
+  traded false positives for recall ([round](docs/agentic-security.md#cyber-recall-tuning-round-2026-10-07-tried-not-adopted)),
+  so this needs shared-policy content changes.
+- [ ] agentic-security: detect off-task drift ("autonomy hijack") in tool results; 2 of 6 still succeed, as with no guardrail.
 - [x] `agentic-security`: drop-in guardrail with a 10-message window (user intent and drift as context), no cache,
   surgical withholding of flagged tool results and hedged judge calls; see [docs/agentic-security.md](docs/agentic-security.md).
 - [ ] agentic-security: tune delegated-task false withholds on a separate dev set (not AgentDojo).
-- [ ] Measure protection, not just cost: rerun the agent loop with an agent model that falls for injections.
+- [x] Measure protection with an agent model that falls for injections (Gemma 4 e2b: attack success 42% to 0%).
 - [ ] Add gateway alerting and a separate judge rate-limit budget; rerun ablations after policy changes.
 
 *Evaluation hardening, from Red Hat's and guardrail-showdown's benchmarks*

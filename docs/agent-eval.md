@@ -32,6 +32,7 @@ bash evals/agent/run.sh smoke      # 2 samples per task, about 3 minutes
 bash evals/agent/run.sh full       # all samples
 AGENT_ARMS=agentic bash evals/agent/run.sh full       # a subset of arms
 AGENT_MAX_CONNECTIONS=4 bash evals/agent/run.sh full  # agents in flight per arm (default 8)
+AGENT_MODEL=gemma4:e2b AGENT_LIMIT=12 bash evals/agent/run.sh full   # a weaker local agent model, 12 samples per task
 ```
 
 - **Rate limit:** every agent call also triggers judge calls on the same OpenAI limit. With four arms at 8
