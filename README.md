@@ -15,12 +15,11 @@ option found so far in each approach:
 | Approach | Best option today | Quality | Latency per check (p50) | Status |
 |---|---|---|---|---|
 | **LLM-as-a-judge** | **`agentic-security`** (gpt-6-luna) | held-out F1 0.93 (cyber 0.93). AgentDojo task success under attack 56%, vs 6% for `cyber-guard` | about 0.9 s; at most 2 judge calls per agent step | **Active, ready to deploy:** drop-in, no cache |
-| **Hosted decision API** | **`jev-tuned`** (TypeSafe Jev via OpenRouter) | dev F1 0.945 (cyber 0.964, tool calls 0.878) | **about 0.21 s** | **Active, evaluating:** held-out run pending. Best as a pre-filter that clears about half of benign traffic before the judge |
+| **Hosted decision API** | **`jev-tuned`** (TypeSafe Jev via OpenRouter) | held-out F1 0.94 (cyber 0.94, public 0.88, tool calls 0.90); false positives 2–9% | **about 0.23 s** | **Active:** recommended as a pre-filter that answers about 80% of legitimate checks before the judge, with the judge's quality unchanged |
 | Self-hosted classifier | `safeguard-20b` (policy-following); `sentinel-v2` (fastest useful) | F1 0.88; 0.77, user-side text only | 3.2 s; 137 ms | Benchmarked; not under active tuning |
 | Self-hosted decision model | `s1-v4` (our Laya fine-tune) | F1 0.73 | 148 ms | Paused |
 
-Classifier and decision-model rows come from the historical `rep-test` comparison below. Jev's numbers are from
-dev data until its held-out run.
+Classifier and decision-model rows come from the historical `rep-test` comparison below.
 
 **`agentic-security`** ([docs](docs/agentic-security.md), [deploy/agentic-security/](deploy/agentic-security/)) is
 one Python file, two prompt files and a config entry, with no cache, no state and no extra services.
@@ -38,12 +37,14 @@ one Python file, two prompt files and a config entry, with no cache, no state an
 **`jev-tuned`** ([docs](docs/jev-evaluation.md)) is a hosted decision model: one call per check returns a
 probability for each security question.
 
-- **Questions:** given our judge's own tuned policies as questions, and the user's request as context for tool calls,
-  it matched or beat the LLM judges on user messages, tool results and tool definitions on dev.
-- **Speed and cost:** p50 0.21 s, p95 0.30 s, about $0.07 per 1k checks.
-- **Weak spot:** tool calls, F1 0.878 vs the judge's 0.92.
-- **As a pre-filter:** if it clears checks it scores below 0.15 and the judge decides the rest, the judge's accuracy
-  and false-positive rate are unchanged, and about half of legitimate traffic needs no judge call.
+- **Questions:** our judge's own tuned policies are given to it as questions. For tool calls it also gets the
+  user's request, the agent's earlier steps and the app's rules as context.
+- **Held-out accuracy:** it matches or beats both LLM judges on F1 (0.94, cyber 0.94, public 0.88), including tool
+  calls (0.90 vs 0.85).
+- **Speed and cost:** p50 0.23 s, p95 0.31 s, about $0.06–0.09 per 1k checks.
+- **Weak spot:** more false positives than the judges on cyber requests and public injection sets (7–9% vs 2–6%).
+- **As a pre-filter:** if it clears checks it scores below 0.27 and the judge decides the rest, the judge's held-out
+  F1 and false-positive rate hold, and Jev alone answers 78–87% of legitimate checks.
 
 ## Four guardrail approaches
 
@@ -528,11 +529,10 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 
 *Hosted decision APIs*
 
-- [x] Jev, tuned on dev (`jev-tuned`, [docs/jev-evaluation.md](docs/jev-evaluation.md)). With the judge's own policy
-  text as questions it matches or beats the LLM judges on user messages, tool results and tool definitions, at about
-  0.2 s per check; tool calls stay weaker (F1 0.878 vs 0.92). As a pre-filter it clears about half of benign traffic
-  with no loss of the judge's precision.
-- [ ] Jev: one held-out run of `jev-tuned` (blocked: OpenRouter credits), then a drop-in `deploy/jev-prefilter/`.
+- [x] Jev tuned and validated (`jev-tuned`, [docs/jev-evaluation.md](docs/jev-evaluation.md)): held-out F1 0.94 at
+  0.23 s per check. As a pre-filter it answers 78–87% of legitimate checks with the judge's quality unchanged.
+- [ ] Jev pre-filter as a drop-in LiteLLM guardrail in front of agentic-security, then an agent-loop test.
+- [ ] Self-hosted decision models (Laya, `s1-v4`, Clef-flash 9B) on the Jev question set; fine-tune toward it.
 - [ ] `dec-openai`: rerun once OpenAI Decisions API access is granted (currently 403), then retire
   `dec-luna-emu` from the results.
 - [ ] Optional: Perplexity's Decisions API, and Cloudflare Clef hosted on Workers AI (needs an account
