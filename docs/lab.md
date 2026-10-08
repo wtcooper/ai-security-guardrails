@@ -6,8 +6,8 @@ It compares four categories of guard, split by whose inference it is:
 | Category | Example ids |
 |---|---|
 | LLM-as-a-judge (our policies on a hosted LLM) | `cyber-guard-per-policy`, `cyber-guard` |
-| Hosted decision APIs (the provider's inference) | `dec-jev`, `dec-openai` (`dec-luna-emu` is a test double) |
-| Self-hosted decision models (ours; fine-tunable) | `s1-zeroshot`, `s1-v4`, `strands-decider-2b`, `clef-flash-9b` |
+| Hosted decision APIs (the provider's inference) | `jev-base-stockq`, `dec-openai` (`dec-luna-emu` is a test double) |
+| Self-hosted decision models (ours; fine-tunable) | `laya-base-0.4b-stockq`, `laya-tuned-0.4b-stockq`, `strands-base-2b-stockq`, `clef-base-9b-stockq` |
 | Self-hosted classifiers (fixed task) | `pg2-*`, `sentinel-v2`, `deberta-pi-v2`, `qwen3guard-*`, `shieldstral-3b`, `llama-guard4-12b`, `granite-guardian-8b`, `nemotron-cs-4b`, `safeguard-20b` |
 
 Every guard is registered in [src/guardlab/guards.yaml](../src/guardlab/guards.yaml) and implements

@@ -11,20 +11,20 @@ guards:
 
   # ------------------------------------------------------------------ self-hosted decision models: open weights on our hardware (fine-tunable)
   # Laya zero-shot and our fine-tune (s1-*), plus other open decision models answering the same question battery.
-  s1-zeroshot:
+  laya-base-0.4b-stockq:
     adapter: s1guard
     family: decision-model (zero-shot)
     license: Apache-2.0
     model: convaiinnovations/laya
     policy: ${REPO}/experiments/s1guard_finetune/policies/laya-base.yaml
-  s1-v4:
+  laya-tuned-0.4b-stockq:
     adapter: s1guard
     family: decision-model (fine-tuned)
     license: Apache-2.0 base; our checkpoint (not in git)
     model: ${REPO}/experiments/s1guard_finetune/models/laya-s1guard-v4
     policy: ${REPO}/experiments/s1guard_finetune/policies/laya-s1guard-v4.yaml
     trained_on: [s1guard_train]
-  strands-decider-2b:      # AWS Strands Labs; serve: bash evals/lab/shims/strands_decider.sh serve
+  strands-base-2b-stockq:      # AWS Strands Labs; serve: bash evals/lab/shims/strands_decider.sh serve
     adapter: decision_api
     family: decision-model (zero-shot)
     license: Apache-2.0
@@ -33,7 +33,7 @@ guards:
     model: strands-decider-2b
     timeout_s: 60
     policy: ${REPO}/src/guardlab/decisions/policies/decisions.yaml
-  clef-flash-9b:           # Cloudflare Clef-flash via Ollama >= 0.35.1 (`ollama pull clef-flash:9b`, ~10 GB)
+  clef-base-9b-stockq:           # Cloudflare Clef-flash via Ollama >= 0.35.1 (`ollama pull clef-flash:9b`, ~10 GB)
     adapter: decision_api
     family: decision-model (zero-shot)
     license: Apache-2.0
@@ -342,12 +342,61 @@ guards:
     family: decision-api
     license: TypeSafe API (via OpenRouter)
     policy: ${REPO}/src/guardlab/decisions/policies/jev/j7.yaml
-  jev-tuned:   # frozen Jev configuration (docs/jev-evaluation.md)
+  # The jev-base question set on self-hosted decision models, to measure the effect of model size
+  # (docs/decision-model-size.md). Same questions, context and thresholds; only the model changes.
+  laya-base-0.4b:          # Laya base, ModernBERT-large ~0.4B, in-process
+    adapter: jev
+    family: decision-model (zero-shot)
+    license: Apache-2.0
+    backend: laya
+    model: convaiinnovations/laya
+    policy: ${REPO}/src/guardlab/decisions/policies/jev/tuned.yaml
+  laya-tuned-0.4b:         # our fine-tuned Laya (trained on the old question battery), in-process
+    adapter: jev
+    family: decision-model (fine-tuned)
+    license: Apache-2.0 base; our checkpoint (not in git)
+    backend: laya
+    model: ${REPO}/experiments/s1guard_finetune/models/laya-s1guard-v4
+    policy: ${REPO}/src/guardlab/decisions/policies/jev/tuned.yaml
+    trained_on: [s1guard_train]
+  strands-base-2b:    # AWS Strands Decider 2B; serve: bash evals/lab/shims/strands_decider.sh serve
+    adapter: jev
+    family: decision-model (zero-shot)
+    license: Apache-2.0
+    base_url: http://127.0.0.1:8768
+    path: /v1/systemone
+    api_key_env: ""
+    model: strands-decider-2b
+    timeout_s: 120
+    policy: ${REPO}/src/guardlab/decisions/policies/jev/tuned.yaml
+  clef-base-9b-ollama:       # Cloudflare Clef-flash 9B via Ollama >= 0.35.1
+    adapter: jev
+    family: decision-model (zero-shot)
+    license: Apache-2.0
+    base_url: http://127.0.0.1:11434
+    path: /v1/systemone
+    api_key_env: ""
+    model: clef-flash:9b
+    timeout_s: 180
+    policy: ${REPO}/src/guardlab/decisions/policies/jev/tuned.yaml
+  kev-base-4b:        # Kev-4B (Jared Palmer; Qwen3.5-4B + LoRA + pointer head), hosted on OpenRouter
+    adapter: jev
+    family: decision-model (zero-shot)
+    license: Apache-2.0 (weights); hosted via OpenRouter
+    model: jaredpalmer/kev-4b
+    policy: ${REPO}/src/guardlab/decisions/policies/jev/tuned.yaml
+  clef-base-9b:       # Cloudflare Clef-flash 9B, hosted on OpenRouter (same model as clef-base-9b-ollama, served on GPUs)
+    adapter: jev
+    family: decision-model (zero-shot)
+    license: Apache-2.0 (weights); hosted via OpenRouter
+    model: cloudflare/clef-flash
+    policy: ${REPO}/src/guardlab/decisions/policies/jev/tuned.yaml
+  jev-base:   # frozen Jev configuration (docs/jev-evaluation.md)
     adapter: jev
     family: decision-api
     license: TypeSafe API (via OpenRouter)
     policy: ${REPO}/src/guardlab/decisions/policies/jev/tuned.yaml
-  dec-jev:                 # TypeSafe Jev (hosted reference decision model) via OpenRouter; needs OPENROUTER_API_KEY
+  jev-base-stockq:                 # TypeSafe Jev (hosted reference decision model) via OpenRouter; needs OPENROUTER_API_KEY
     adapter: decision_api
     family: decision-api
     license: TypeSafe API (via OpenRouter)

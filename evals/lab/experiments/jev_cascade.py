@@ -2,10 +2,11 @@
 
 Design: Jev scores every check; below a threshold `t` the check is allowed with no judge call; otherwise the judge
 (agentic-security, frozen v3 lab results) decides. `t` is chosen on dev only: the largest value that keeps the
-judge's dev F1 (within 0.005) and does not raise its false positives. The same `t` is then applied to held-out slices.
+judge's dev F1 (within 0.005) and does not raise its false positives. The same `t` is then applied to the two held-out
+test sets (held_out.py: cyber & agent, public), using each guard's latest fresh run there.
 Also reported, for comparison: each guard alone, and a variant where Jev also blocks at >= 0.5.
 
-    uv run python evals/lab/experiments/jev_cascade.py [--jev jev-tuned] [--judge-version 64d8c213dc6b]
+    uv run python evals/lab/experiments/jev_cascade.py [--jev jev-base] [--judge-dev-version 64d8c213dc6b] [--jev-dev-version 700eadb21926]
 """
 
 import argparse
@@ -33,10 +34,10 @@ def load(name: str, version: str) -> dict:
 def slices() -> dict:
     rows = [json.loads(line) for line in open(ROOT / "evals" / "lab" / "data" / "cases.jsonl")]
     cyber = lambda r: r["stage"] == "input" and (r["category"] == "cyber" or r["family"] == "cyber_legitimate")
+    sys.path.insert(0, str(Path(__file__).parent))
+    from held_out import sets
     return {"dev": [r for r in rows if (r["split"] == "dev" and (r.get("rep") == "yes" or cyber(r))) or r["set"].startswith("tcd-")],
-            "rep-test": [r for r in rows if r["split"] == "test" and r.get("rep") == "yes"],
-            "cyber-test": [r for r in rows if r["split"] == "test" and cyber(r)],
-            "public": [r for r in rows if r["split"] == "public"]}
+            **sets()}
 
 
 def score(data, decide) -> dict:
@@ -50,12 +51,15 @@ def score(data, decide) -> dict:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--jev", default="jev-tuned")
-    ap.add_argument("--judge-version", default="64d8c213dc6b")   # agentic-security v3, the frozen lab run
-    a = ap.parse_args()
-    jev, judge = load(a.jev, load_guard(a.jev).version), load("agentic-security", a.judge_version)
+    ap.add_argument("--jev", default="jev-base")
+    ap.add_argument("--judge-dev-version", default="64d8c213dc6b")   # agentic-security v3 dev run (same prompts)
+    ap.add_argument("--jev-dev-version", default="700eadb21926")      # jev-base dev run (same questions; registry keys
+    a = ap.parse_args()                                                # added since changed the version hash)
     per = {}
     for name, rows in slices().items():
+        dev = name == "dev"
+        jev = load(a.jev, a.jev_dev_version if dev else load_guard(a.jev).version)
+        judge = load("agentic-security", a.judge_dev_version if dev else load_guard("agentic-security").version)
         data = []
         for r in rows:
             if r["stage"] == "output":   # agentic-security does not screen plain replies

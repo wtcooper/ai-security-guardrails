@@ -1,4 +1,4 @@
-# Jev round J7: jev-tuned plus the application's system prompt (its rules) as tool-call context.
+# Jev round J7: jev-base plus the application's system prompt (its rules) as tool-call context.
 stages:
   input:
     field: user_message

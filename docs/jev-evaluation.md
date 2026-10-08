@@ -66,7 +66,7 @@ per check**. Questions are set per stage in a YAML file
   the question, loaded at run time from [src/guardlab/judge/policies/](../src/guardlab/judge/policies/).
 - **Cost:** each check records the provider-reported cost.
 
-The out-of-box battery (`dec-jev`, about 2 calls per tool-call check) stays registered for comparison.
+The out-of-box battery (`jev-base-stockq`, about 2 calls per tool-call check) stays registered for comparison.
 
 ## Rounds (dev only)
 
@@ -74,7 +74,7 @@ Each cell is caught / legitimate flagged / F1, with AUROC in brackets.
 
 | Round | Change | rep-dev | cyber-dev | tool calls (tc-dev) |
 |---|---|---|---|---|
-| J0 | Out-of-box battery (`dec-jev`) | 90% / 7% / 0.92 (0.954) | 88% / 4% / 0.92 (0.960) | 75% / 23% / 0.80 (0.842) |
+| J0 | Out-of-box battery (`jev-base-stockq`) | 90% / 7% / 0.92 (0.954) | 88% / 4% / 0.92 (0.960) | 75% / 23% / 0.80 (0.842) |
 | J1 | Same questions, one call per check | 90% / 9.4% / 0.911 | 88% / 3.7% / 0.919 | 76% / 28% / 0.793 |
 | J2 | Tool calls: authorization-aware questions, with the user's request and the agent's history | 90% / **2.2%** / 0.938 | 89% / 3.7% / 0.925 | 79% / **8.1%** / 0.858 (0.931) |
 | J3 | User messages: the judge's cyber and injection policies as questions. Tool calls: an off-task question | 92% / 3.3% / 0.946 | **96% / 3.7% / 0.964** (0.979) | 81% / 12.8% / 0.858 |
@@ -82,7 +82,7 @@ Each cell is caught / legitimate flagged / F1, with AUROC in brackets.
 | **J5** | Drop the indirect-injection policy question (it added 4 false flags on tool results) | **91% / 2.2% / 0.945** (0.969) | **96% / 3.7% / 0.964** (0.978) | **82% / 8.1% / 0.878** (0.940) |
 | J6 | Injection-policy threshold 0.3: on dev scores, +2 attacks and no new false flags | 92% / 2.2% / 0.950 | 96% / 3.7% / 0.964 | 82% / 9.3% / 0.875 |
 | J7 | Tool calls: the app's system prompt (its rules) added as context | 93% / 2.8% / 0.950 | 96% / 3.7% / 0.964 | **88% / 8.1% / 0.912** (0.950) |
-| **J8 = `jev-tuned`** | J7 without the exfiltration question (it added nothing; checked offline) | **93% / 2.2% / 0.952** (0.973) | **96% / 3.7% / 0.964** (0.978) | 86% / 8.1% / 0.901 (0.949) |
+| **J8 = `jev-base`** | J7 without the exfiltration question (it added nothing; checked offline) | **93% / 2.2% / 0.952** (0.973) | **96% / 3.7% / 0.964** (0.978) | 86% / 8.1% / 0.901 (0.949) |
 
 **What mattered:**
 - **The judge's own policy text as a Jev question** was the biggest single gain. cyber-dev went from 89% to 96% caught
@@ -98,7 +98,7 @@ Each cell is caught / legitimate flagged / F1, with AUROC in brackets.
   tool-call sets. The "latest" model alias is the same model (`jev-1.13-20260917`).
 - **One call per check** halved tool-call latency against the battery's two calls (426 to 223 ms p50).
 
-## Held-out results (`jev-tuned`, one run)
+## Held-out results (`jev-base`, one run)
 
 Each cell is caught / legitimate flagged / F1, with AUROC in brackets.
 
@@ -166,4 +166,4 @@ Plain replies are excluded, since agentic-security doesn't screen them.
 2. **Agent-loop test of the cascade:** run the four-arm agent eval with the pre-filter in front of agentic-security,
    to measure task success and latency per step.
 3. **Self-hosted alternative:** run the same question set on self-hosted decision models (Laya, our fine-tuned
-   `s1-v4`, Clef-flash 9B) through the same adapter.
+   `laya-tuned-0.4b-stockq`, Clef-flash 9B) through the same adapter.

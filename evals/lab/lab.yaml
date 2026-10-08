@@ -2,7 +2,7 @@
 # block/pass decision is scored with `guardrails` / `not-guardrails` (no model, no judge).
 #
 #   uv run python evals/lab/build_corpus.py          # -> data/pf/lab_tests.json
-#   bash evals/run.sh lab smoke-dev 'regex|s1-v4'    # modes: smoke-dev | smoke-test | dev | test
+#   bash evals/run.sh lab smoke-dev 'regex|laya-tuned-0.4b-stockq'    # modes: smoke-dev | smoke-test | dev | test
 description: "guardrail lab: guard-only comparison on the standardized corpus"
 
 env:
@@ -20,8 +20,8 @@ prompts: ["{{case_id}}"]  # the provider reads vars directly; corpus text is nev
 # Local-model guards use `workers: 1` (one model copy in memory); API guards scale with -j.
 providers:
   - {id: file://provider_guard.py, label: regex, config: {guard: regex}}
-  - {id: file://provider_guard.py, label: s1-zeroshot, config: {guard: s1-zeroshot, workers: 1}}
-  - {id: file://provider_guard.py, label: s1-v4, config: {guard: s1-v4, workers: 1}}
+  - {id: file://provider_guard.py, label: laya-base-0.4b-stockq, config: {guard: laya-base-0.4b-stockq, workers: 1}}
+  - {id: file://provider_guard.py, label: laya-tuned-0.4b-stockq, config: {guard: laya-tuned-0.4b-stockq, workers: 1}}
   - {id: file://provider_guard.py, label: cyber-guard-per-policy, config: {guard: cyber-guard-per-policy}}
   - {id: file://provider_guard.py, label: cyber-guard-per-policy-single, config: {guard: cyber-guard-per-policy-single}}
   - {id: file://provider_guard.py, label: cyber-guard, config: {guard: cyber-guard}}
@@ -37,10 +37,14 @@ providers:
   - {id: file://provider_guard.py, label: judge-abl-nodefs-cyber, config: {guard: judge-abl-nodefs-cyber}}
   - {id: file://provider_guard.py, label: judge-abl-withexamples, config: {guard: judge-abl-withexamples}}
   - {id: file://provider_guard.py, label: dec-luna-emu, config: {guard: dec-luna-emu}}
-  - {id: file://provider_guard.py, label: dec-jev, config: {guard: dec-jev}}
-  - {id: file://provider_guard.py, label: jev-tuned, config: {guard: jev-tuned}}
-  - {id: file://provider_guard.py, label: strands-decider-2b, config: {guard: strands-decider-2b, workers: 1}}
-  - {id: file://provider_guard.py, label: clef-flash-9b, config: {guard: clef-flash-9b, workers: 1}}
+  - {id: file://provider_guard.py, label: jev-base-stockq, config: {guard: jev-base-stockq}}
+  - {id: file://provider_guard.py, label: jev-base, config: {guard: jev-base}}
+  - {id: file://provider_guard.py, label: laya-base-0.4b, config: {guard: laya-base-0.4b, workers: 1}}
+  - {id: file://provider_guard.py, label: laya-tuned-0.4b, config: {guard: laya-tuned-0.4b, workers: 1}}
+  - {id: file://provider_guard.py, label: strands-base-2b, config: {guard: strands-base-2b, workers: 1}}
+  - {id: file://provider_guard.py, label: clef-base-9b-ollama, config: {guard: clef-base-9b-ollama, workers: 1}}
+  - {id: file://provider_guard.py, label: strands-base-2b-stockq, config: {guard: strands-base-2b-stockq, workers: 1}}
+  - {id: file://provider_guard.py, label: clef-base-9b-stockq, config: {guard: clef-base-9b-stockq, workers: 1}}
   - {id: file://provider_guard.py, label: pg2-86m, config: {guard: pg2-86m, workers: 1}}
   - {id: file://provider_guard.py, label: pg2-22m, config: {guard: pg2-22m, workers: 1}}
   - {id: file://provider_guard.py, label: sentinel-v2, config: {guard: sentinel-v2, workers: 1}}

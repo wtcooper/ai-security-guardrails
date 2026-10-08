@@ -12,6 +12,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PROMPTFOO_PYTHON="$ROOT/.venv/bin/python" PROMPTFOO_DISABLE_REMOTE_GENERATION=true
 [ -f "$ROOT/.env" ] && { set -a; source "$ROOT/.env"; set +a; }
 PF=(npx -y promptfoo@0.123.1)
+export PROMPTFOO_CACHE_ENABLED=false   # every run is fresh inference: no promptfoo response cache
 OUT="$ROOT/evals/results"; mkdir -p "$OUT/lab"
 
 if [ "${1:-}" = lab ]; then
@@ -34,7 +35,7 @@ if [ "${1:-}" = lab ]; then
   [ -f "$ROOT/evals/lab/data/pf/lab_tests.json" ] || "$ROOT/.venv/bin/python" "$ROOT/evals/lab/build_corpus.py"
   slug="$(echo "$guards" | tr -c 'A-Za-z0-9._-' '_' | sed 's/_*$//')"; [ "$slug" = "_" ] || [ -z "$slug" ] && slug=all
   res="$OUT/lab/$mode-$slug.json"
-  (cd "$ROOT/evals/lab" && "${PF[@]}" eval -c lab.yaml --no-progress-bar -j "${PF_CONCURRENCY:-4}" "${filt[@]}" \
+  (cd "$ROOT/evals/lab" && "${PF[@]}" eval -c lab.yaml --no-progress-bar --no-cache -j "${PF_CONCURRENCY:-4}" "${filt[@]}" \
       --filter-providers "^($guards)\$" --output "$res") || true
   exec "$ROOT/.venv/bin/python" "$ROOT/evals/lab/report.py" "$res"
 fi
@@ -44,11 +45,11 @@ curl -sf "${GATEWAY_URL:-http://localhost:4000}/health/liveliness" >/dev/null \
 cd "$ROOT/evals/promptfoo"
 
 case "${1:-}" in
-  isolate)  "${PF[@]}" eval -c isolate.yaml --no-progress-bar --output "$OUT/isolate.json" ;;
-  app_eval) "${PF[@]}" eval -c app_eval.yaml --no-progress-bar --filter-sample "${SAMPLE:-20}" --output "$OUT/app_eval.json" ;;
-  e2e)      "${PF[@]}" eval -c ../lab/e2e.yaml --no-progress-bar --filter-sample "${SAMPLE:-20}" --output "$OUT/e2e.json" ;;
-  redteam)  "${PF[@]}" redteam generate -c redteam.yaml -o redteam.generated.yaml --no-progress-bar
-            "${PF[@]}" redteam eval -c redteam.generated.yaml --no-progress-bar --output "$OUT/redteam.json" ;;
+  isolate)  "${PF[@]}" eval -c isolate.yaml --no-progress-bar --no-cache --output "$OUT/isolate.json" ;;
+  app_eval) "${PF[@]}" eval -c app_eval.yaml --no-progress-bar --no-cache --filter-sample "${SAMPLE:-20}" --output "$OUT/app_eval.json" ;;
+  e2e)      "${PF[@]}" eval -c ../lab/e2e.yaml --no-progress-bar --no-cache --filter-sample "${SAMPLE:-20}" --output "$OUT/e2e.json" ;;
+  redteam)  "${PF[@]}" redteam generate -c redteam.yaml -o redteam.generated.yaml --no-progress-bar --no-cache
+            "${PF[@]}" redteam eval -c redteam.generated.yaml --no-progress-bar --no-cache --output "$OUT/redteam.json" ;;
   *) echo "usage: $0 lab|isolate|app_eval|e2e|redteam" >&2; exit 2 ;;
 esac || true   # promptfoo exits non-zero when any assertion fails; the summary below is the result
 "$ROOT/.venv/bin/python" "$ROOT/evals/summarize.py" "$OUT/$1.json"

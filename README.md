@@ -12,14 +12,16 @@ Active work targets a runtime guardrail for an existing LiteLLM Enterprise gatew
 positives, latency and cost that hold up at hundreds of millions of requests, and agents that keep working. The best
 option found so far in each approach:
 
-| Approach | Best option today | Quality | Latency per check (p50) | Status |
+| Approach | Best option today | Quality | Latency per check (median) | Status |
 |---|---|---|---|---|
-| **LLM-as-a-judge** | **`agentic-security`** (gpt-6-luna) | held-out F1 0.93 (cyber 0.93). AgentDojo task success under attack 56%, vs 6% for `cyber-guard` | about 0.9 s; at most 2 judge calls per agent step | **Active, ready to deploy:** drop-in, no cache |
-| **Hosted decision API** | **`jev-tuned`** (TypeSafe Jev via OpenRouter) | held-out F1 0.94 (cyber 0.94, public 0.88, tool calls 0.90); false positives 2–9% | **about 0.23 s** | **Active:** recommended as a pre-filter that answers about 80% of legitimate checks before the judge, with the judge's quality unchanged |
-| Self-hosted classifier | `safeguard-20b` (policy-following); `sentinel-v2` (fastest useful) | F1 0.88; 0.77, user-side text only | 3.2 s; 137 ms | Benchmarked; not under active tuning |
-| Self-hosted decision model | `s1-v4` (our Laya fine-tune) | F1 0.73 | 148 ms | Paused |
+| **LLM-as-a-judge** | **`agentic-security`** (gpt-6-luna) | F1 0.90 on our cyber & agent test set, 0.87 on public benchmarks. AgentDojo task success under attack 56%, vs 6% for `cyber-guard` | about 0.9 s; at most 2 judge calls per agent step | **Active, ready to deploy:** drop-in, no cache |
+| **Hosted decision API** | **`jev-base`** (TypeSafe Jev via OpenRouter) | F1 0.92 on our test set, 0.88 on public benchmarks; the strongest on agent tool calls | **about 0.22 s** | **Active:** recommended as a pre-filter that answers over 80% of legitimate checks before the judge |
+| Self-hosted decision model | **`kev-tuned-9b`** (Kev-9B fine-tuned on our clean training set) | F1 0.93 on our test set, 0.89 on public benchmarks: on par with Jev overall, but weaker on agent tool calls | about 0.38 s on one H100 (unoptimised runner) | **Active:** matches Jev; needs a GPU server. [Details](docs/decision-model-size.md) |
+| Self-hosted classifier | `safeguard-20b` (policy-following); `sentinel-v2` (fastest useful) | F1 0.88; 0.77, user-side text only (older test, not yet re-run) | 3.2 s; 137 ms | Benchmarked; not under active tuning |
 
-Classifier and decision-model rows come from the historical `rep-test` comparison below.
+F1 is one score from 0 to 1 that combines attacks caught and legitimate requests wrongly flagged; 1.0 is perfect.
+The two test sets are explained in [How we test](#how-we-test). The classifier row comes from an
+[earlier test with slightly different cases](#earlier-results-older-policies-and-test-cases) and hasn't been re-run yet.
 
 **`agentic-security`** ([docs](docs/agentic-security.md), [deploy/agentic-security/](deploy/agentic-security/)) is
 one Python file, two prompt files and a config entry, with no cache, no state and no extra services.
@@ -27,32 +29,77 @@ one Python file, two prompt files and a config entry, with no cache, no state an
 - **Judge calls:** one before the model, and one after it only if the model calls tools. It sees the last 10
   messages, not the system prompt.
 - **Flagged tool results:** a second call cuts only the injected lines, so the agent keeps working.
-- **Accuracy:** on par with `cyber-guard` on single messages, held-out F1 0.93 vs 0.92 (cyber 0.93 vs 0.95).
+- **Accuracy:** on par with `cyber-guard` on single messages: F1 0.90 vs 0.91 on our cyber & agent test set, and
+  0.87 vs 0.86 on the public benchmarks.
 - **Agent tasks:** AgentDojo task success is 56% under attack and 70% on benign tasks, vs 6% and 61% for
   `cyber-guard` (73% and 78% with no guardrail).
 - **Protection:** with an agent that falls for injections (Gemma 4 e2b), attack success fell from 42% to 0%.
 - **Cost and speed:** 11× fewer judge tokens than `cyber-guard` without its cache, and about 2.0 s of classifier time
   per agent step.
 
-**`jev-tuned`** ([docs](docs/jev-evaluation.md)) is a hosted decision model: one call per check returns a
+**`jev-base`** ([docs](docs/jev-evaluation.md)) is a hosted decision model: one call per check returns a
 probability for each security question.
 
 - **Questions:** our judge's own tuned policies are given to it as questions. For tool calls it also gets the
   user's request, the agent's earlier steps and the app's rules as context.
-- **Held-out accuracy:** it matches or beats both LLM judges on F1 (0.94, cyber 0.94, public 0.88), including tool
-  calls (0.90 vs 0.85).
-- **Speed and cost:** p50 0.23 s, p95 0.31 s, about $0.06–0.09 per 1k checks.
-- **Weak spot:** more false positives than the judges on cyber requests and public injection sets (7–9% vs 2–6%).
-- **As a pre-filter:** if it clears checks it scores below 0.27 and the judge decides the rest, the judge's held-out
-  F1 and false-positive rate hold, and Jev alone answers 78–87% of legitimate checks.
+- **Accuracy:** 0.92 on our cyber & agent test set and 0.88 on the public benchmarks, vs 0.90–0.91 and 0.86–0.87
+  for the two judges. Only our fine-tuned Kev-9B is level with it. On agent tool calls it scores 0.89, vs 0.82 for
+  the judges and 0.67 for Kev-9B.
+- **Speed and cost:** median 0.22 s per check, about $0.06–0.09 per 1,000 checks.
+- **Weak spot:** more false alarms than the judges on the public benchmarks (8.6% of legitimate prompts flagged, vs
+  1.3–2.2%).
+- **As a pre-filter:** Jev lets through checks it scores below 0.27, and the judge decides the rest. On our test set
+  the judge's F1 holds (0.90) and its false alarms drop from 5.2% to 3.9%; on the public benchmarks F1 dips from
+  0.87 to 0.86. Jev alone answers 82–84% of legitimate checks.
+
+## How we test
+
+Every score above comes from two **held-out test sets**: cases set aside before any tuning or training. No guard we
+tuned and no model we fine-tuned ever saw them. Every guard is scored on exactly the same cases, with fresh model
+calls on every run (no cached answers).
+
+| Test set | Cases | What's in it | Where it comes from |
+|---|---|---|---|
+| **Cyber & agent test set** | 407: 254 attacks, 153 legitimate | Requests for offensive cyber help next to legitimate security work; prompt injection, including injection hidden in tool output and documents; unsafe agent tool calls; harmless look-alikes | Built by us from public research datasets plus a few hand-written cases. Closest to what the gateway will see. |
+| **Public benchmarks** | 1,578: 685 attacks, 893 legitimate | Prompt-injection and jailbreak attempts typed by users, and injection hidden in documents | Five benchmarks published by other teams, used as they are, so results can be compared with other work |
+
+**Why scores differ between them:**
+- **Different labelling.** Other teams labelled the public benchmarks with their own definitions. Some "attacks"
+  there are harmless role-play or fall outside our cyber scope, and some legitimate rows read like attacks. Every
+  guard scores lower there.
+- **Different content.** The public benchmarks have no agent tool calls and aren't built around offensive-cyber
+  requests.
+
+So the cyber & agent set measures how well a guard does our job. The public benchmarks check that a guard isn't
+just fitted to our own data.
+
+**With thanks to the teams whose datasets make up these tests:**
+- **Cyber & agent set:**
+  - Meta's [CyberSecEval](https://github.com/meta-llama/PurpleLlama) (Purple Llama)
+  - [AdvBench](https://github.com/llm-attacks/llm-attacks)
+  - Microsoft's [BIPIA](https://github.com/microsoft/BIPIA)
+  - [NotInject](https://huggingface.co/datasets/leolee99/NotInject)
+  - [toolcall-guard-v1](https://huggingface.co/datasets/johannhartmann/toolcall-guard-v1)
+  - [PromptInject](https://github.com/agencyenterprise/PromptInject)
+  - [guardrail-showdown](https://github.com/AjeyDS/guardrail-showdown)
+- **Public benchmarks:**
+  - [deepset/prompt-injections](https://huggingface.co/datasets/deepset/prompt-injections)
+  - [jackhhao/jailbreak-classification](https://huggingface.co/datasets/jackhhao/jailbreak-classification)
+  - [xTRam1/safe-guard-prompt-injection](https://huggingface.co/datasets/xTRam1/safe-guard-prompt-injection)
+  - [rogue-security/prompt-injections-benchmark](https://huggingface.co/datasets/rogue-security/prompt-injections-benchmark)
+  - Microsoft's BIPIA
+
+Every source, its licence, and how training data is kept apart from these tests are in
+[docs/data-provenance.md](docs/data-provenance.md). Run the comparison with
+`uv run python evals/lab/experiments/held_out.py --run <guards>`, then `--report <guards>`.
 
 ## Four guardrail approaches
 
 | Approach | Where the task is defined | Inference | Implementations and evaluation status |
 |---|---|---|---|
 | **Self-hosted classifiers** | Fixed training task or a supplied classification policy | Local models | Evaluated: Prompt Guard 2, Sentinel v2, DeBERTa, Llama Guard 4, Qwen3Guard, Shieldstral, Granite Guardian, Nemotron and gpt-oss-safeguard |
-| **Self-hosted decision models** | Questions and context supplied to the model; weights can be fine-tuned | Local models | Evaluated: `s1-zeroshot` (Laya), `s1-v4` (our Laya fine-tune), `strands-decider-2b`. Registered, not yet evaluated: `clef-flash-9b` |
-| **Hosted decision APIs** | Questions sent to the provider | Provider API | Evaluated on dev: `jev-tuned` and `dec-jev` (TypeSafe Jev via OpenRouter; held-out run pending). Awaiting access: `dec-openai` (OpenAI Decisions API) |
+| **Self-hosted decision models** | Questions and context supplied to the model; weights can be fine-tuned | Local or rented GPU | Evaluated: Laya (base and two fine-tunes), Strands Decider 2B, Clef-flash 9B, Kev-4B, Kev-9B (base and our fine-tune, trained on [one clean training set](docs/data-provenance.md)); see [docs/decision-model-size.md](docs/decision-model-size.md) |
+| **Hosted decision APIs** | Questions sent to the provider | Provider API | Evaluated: `jev-base` and `jev-base-stockq` (TypeSafe Jev via OpenRouter). Awaiting access: `dec-openai` (OpenAI Decisions API) |
 | **LLM-as-a-judge** | Policy instructions and application context | Hosted LLM | Evaluated: `cyber-guard-per-policy` (per-policy), `cyber-guard` (combined request/response policies) and `agentic-security` (drop-in, one call per hook over a recent window), all using gpt-6-luna |
 
 The [guard registry](src/guardlab/guards.yaml) includes a regex baseline. `dec-luna-emu` is a chat-LLM
@@ -70,9 +117,8 @@ scope and [retired](src/guardlab/judge/retired/).
 **How it works:**
 
 1. **One corpus.** [evals/lab/build_corpus.py](evals/lab/build_corpus.py) builds a single-turn cyber
-   corpus: our combined benchmark (407 dev + 407 test representative cases, plus full splits) and five
-   well-known public benchmarks that run independently. Each case has a stage: user input,
-   conversation, tool result, tool definition, tool call or model output.
+   corpus. One part is for tuning; the rest becomes the two [held-out test sets](#how-we-test). Each case has a
+   stage: user input, conversation, tool result, tool definition, tool call or model output.
    See [docs/benchmark.md](docs/benchmark.md).
 2. **One guard interface.** Every guard implements `check(Case) -> GuardResult` (blocked, score,
    status, latency, cost) and is registered in [src/guardlab/guards.yaml](src/guardlab/guards.yaml).
@@ -80,9 +126,9 @@ scope and [retired](src/guardlab/judge/retired/).
    recommended gateway entry fails open.
 3. **Two runners.**
    - **Single-turn checks:** promptfoo runs any set of guards over a slice of the corpus
-     ([evals/run.sh](evals/run.sh)), with a per-guard result cache.
+     ([evals/run.sh](evals/run.sh)), calling every guard fresh on every run.
      [evals/lab/report.py](evals/lab/report.py) produces the leaderboard: recall, false-positive rate,
-     F1, AUROC, latency and cost.
+     F1, ranking quality (AUROC), latency and cost.
    - **Agent loops:** vanilla Inspect AgentDojo and AgentThreatBench run through the gateway with and
      without guardrails ([evals/agent/](evals/agent/)). They measure attack success and task utility.
 4. **One deployment path.** Any registered guard runs as a LiteLLM guardrail, so the guard you
@@ -91,7 +137,7 @@ scope and [retired](src/guardlab/judge/retired/).
 A fixed classifier usually detects a particular learned risk; a decision model answers the
 questions supplied for the current stage. Judges use policy instructions and richer context.
 Compare guards on the stages they support, and distinguish stock models from tuned policies and
-fine-tuned weights. The judge has had many tuning rounds, `s1-v4` was fine-tuned, and the other
+fine-tuned weights. The judge has had many tuning rounds, `laya-tuned-0.4b-stockq` was fine-tuned, and the other
 local models run without weight fine-tuning; some receive custom policies.
 
 ## Build and customize
@@ -99,7 +145,7 @@ local models run without weight fine-tuning; some receive custom policies.
 ### Decision-model fine-tuning
 
 The System One implementation asks a battery of security questions against Laya or a hosted backend.
-Our `s1-v4` adapter uses a fine-tuned Laya checkpoint; `s1-zeroshot` provides the base-model comparison.
+Our `laya-tuned-0.4b-stockq` adapter uses a fine-tuned Laya checkpoint; `laya-base-0.4b-stockq` provides the base-model comparison.
 The [fine-tuning workspace](experiments/s1guard_finetune/README.md) contains benchmark construction,
 training, scoring and threshold calibration. Checkpoints are local and are not committed.
 [Training methods](docs/training-methods.md) records the v1–v4 recipes and results, and
@@ -119,7 +165,7 @@ ablations are documented in [the tuning log](docs/judge.md).
 The selected malicious-cyber policy is **v4**: it keeps the original defensive-work allowances and
 adds general target-profiling and deceptive-identity rules. Its frozen validation caught **90.5%**
 of attacks with **3.03%** false positives; the comparison below shows the defense/false-positive
-tradeoff. Cyber **policy v4** and **`s1-v4` model weights** are separate version histories.
+tradeoff. Cyber **policy v4** and **`laya-tuned-0.4b-stockq` model weights** are separate version histories.
 
 ### Decision-question tuning (hosted decision models)
 
@@ -135,23 +181,40 @@ same adapter.
 
 ## Results
 
-**Latest results for active work:**
-- `agentic-security` vs `cyber-guard`: held-out accuracy, system-prompt test, latency, and agent loops with
-  gpt-6-luna and Gemma 4, in [docs/agentic-security.md](docs/agentic-security.md).
-- Jev tuning rounds and the cascade analysis are in [docs/jev-evaluation.md](docs/jev-evaluation.md).
+### Head to head on the two held-out test sets
 
-The tables below are the historical cross-approach comparison.
+Fresh runs, 2026-10-08, each guard at its deployed setting. "Caught" is the share of attacks blocked; "false
+alarms" is the share of legitimate cases blocked.
 
-### Combined cyber benchmark (`rep-test`, 407 cases; historical comparison)
+| Guard | Type | Our test set: F1 | caught | false alarms | Public: F1 | caught | false alarms | Median latency |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| **kev-tuned-9b** (fine-tuned on our data) | open-weight decision model | **0.93** | **89%** | **4.6%** | **0.89** | **87%** | 7.1% | 0.38 s (H100) |
+| **jev-base** | hosted decision API | 0.92 | 88% | **4.6%** | 0.88 | **87%** | 8.6% | **0.22 s** |
+| cyber-guard | LLM judge, lab only | 0.91 | 86% | 5.2% | 0.86 | 78% | 2.2% | 0.84 s |
+| **agentic-security** | LLM judge, deployable | 0.90 | 85% | 5.2% | 0.87 | 78% | **1.3%** | 0.83 s |
+| jev-base-stockq (Jev, original questions) | hosted decision API | 0.89 | 85% | 9.2% | 0.87 | 85% | 8.7% | — |
+| clef-base-9b | open-weight decision model | 0.87 | 79% | 4.6% | 0.73 | 69% | 16.5% | 0.26 s |
+| kev-base-9b | open-weight decision model | 0.86 | 81% | 13.7% | 0.74 | 73% | 19.4% | — |
+| kev-base-4b | open-weight decision model | 0.84 | 78% | 13.7% | 0.75 | 70% | 13.4% | 3.6 s |
 
-The benchmark covers OWASP LLM/MCP/Agentic and MITRE: direct and indirect injection, evasion, tool
-poisoning, unsafe tool calls, leakage and malicious cyber requests. See
-[docs/benchmark.md](docs/benchmark.md). Each guard is scored at its own threshold.
-These recorded runs predate cyber policy v4;
-they are not a fresh comparison of the current policies. Full tables are in
+Smaller decision models (Laya 0.4B, Strands 2B) are compared in [docs/decision-model-size.md](docs/decision-model-size.md);
+the classifiers haven't been re-run on these sets yet. More detail:
+[docs/agentic-security.md](docs/agentic-security.md) (judges, latency, agent loops) and
+[docs/jev-evaluation.md](docs/jev-evaluation.md) (Jev tuning and the pre-filter).
+
+### Earlier results (older policies and test cases)
+
+The tables below predate the two test sets above. They used older policies and an earlier version of our test
+set, which still included reply checks and cases our first fine-tune had trained on. Compare guards within a table,
+not across tables. Labels such as C4 and D3 are policy versions from [the tuning log](docs/judge.md). AUROC
+measures how well a guard's score ranks attacks above legitimate cases (1.0 is perfect). Full tables are in
 [evals/lab/leaderboard.md](evals/lab/leaderboard.md).
 
-| Guard | Category | Attacks caught | Benign flagged | F1 | AUROC | p50 latency |
+**Earlier version of our test set (407 cases).** It covers direct and indirect injection, evasion, tool poisoning, unsafe
+tool calls, leakage and malicious cyber requests ([docs/benchmark.md](docs/benchmark.md)). Each guard is scored at
+its own threshold.
+
+| Guard | Category | Attacks caught | Benign flagged | F1 | AUROC | Median latency |
 |---|---|---:|---:|---:|---:|---:|
 | **cyber-guard** (combined policies) | LLM judge (gpt-6-luna) | 89% | **4%** | **0.93** | 0.928 | 732 ms |
 | **cyber-guard-per-policy** (same rules, one call per policy: the tuning harness) | LLM judge (gpt-6-luna) | **90%** | **4%** | **0.93** | **0.939** | 805 ms |
@@ -160,12 +223,12 @@ they are not a fresh comparison of the current policies. Full tables are in
 | granite-guardian-8b | self-hosted classifier | 73% | 14% | 0.79 | binary | 1458 ms |
 | sentinel-v2 † | self-hosted classifier | 70% | 17% | 0.77 | 0.849 | 137 ms |
 | nemotron-cs-4b (custom policy) | self-hosted classifier | 66% | 12% | 0.76 | 0.835 | 2602 ms |
-| s1-v4 (fine-tuned Laya) ‡ | self-hosted decision model | 63% | 13% | 0.73 | 0.818 | 148 ms |
+| laya-tuned-0.4b-stockq (fine-tuned Laya) ‡ | self-hosted decision model | 63% | 13% | 0.73 | 0.818 | 148 ms |
 | qwen3guard-0.6b / 4b | self-hosted classifier | 57% / 54% | 14% / 10% | 0.67 / 0.67 | 0.795 / 0.819 | 147 / 732 ms |
 | deberta-pi-v2 † (Red Hat's reference classifier) | self-hosted classifier | 57% | 17% | 0.67 | 0.780 | 26 ms |
-| strands-decider-2b (AWS, out of the box) | self-hosted decision model | 49% | 6% | 0.64 | 0.845 | 561 ms |
+| strands-base-2b-stockq (AWS, out of the box) | self-hosted decision model | 49% | 6% | 0.64 | 0.845 | 561 ms |
 | shieldstral-3b | self-hosted classifier | 49% | 8% | 0.63 | 0.811 | 402 ms |
-| s1-zeroshot (Laya) | self-hosted decision model | 39% | 4% | 0.55 | 0.764 | 139 ms |
+| laya-base-0.4b-stockq (Laya) | self-hosted decision model | 39% | 4% | 0.55 | 0.764 | 139 ms |
 | pg2-86m / pg2-22m † (Llama Prompt Guard 2) | self-hosted classifier | 29% / 5% | 1% / 0% | 0.45 / 0.09 | 0.885 / 0.653 | 101 / 30 ms |
 | llama-guard4-12b § (Q4_K_M, llama.cpp) | self-hosted classifier | 30% | 15% | 0.42 | 0.676 | 1123 ms |
 | regex floor | — | 12% | 1% | 0.21 | 0.554 | 0 ms |
@@ -177,24 +240,21 @@ are excluded for it.
 ‡ Scored only on the 215 rows it was not trained on.
 § A content-safety model with no prompt-injection category. 8% of cases exceed its 4k context and
 are unavailable.
-Both judge rows use the frozen S1 instructions (T5 policies, Examples dropped), whose tool-call checks
-see the agent's trajectory; see [docs/judge.md](docs/judge.md). The other guards' tool-call rows were
-scored without the trajectory.
+Both judge rows use an older frozen policy set whose tool-call checks see the agent's earlier steps; see
+[docs/judge.md](docs/judge.md). The other guards' tool-call rows were scored without those steps.
 
 - **Self-hosted decision models, out of the box.** Strands Decider 2B (F1 0.64, AUROC 0.845) beats
-  zero-shot Laya (0.55) but trails our fine-tuned s1-v4 and the judges. Its default 0.5 threshold
+  zero-shot Laya (0.55) but trails our fine-tuned laya-tuned-0.4b-stockq and the judges. Its default 0.5 threshold
   is conservative.
   - Strongest on malicious cyber requests (87%) and tool poisoning (72%).
   - Weakest on indirect injection (25%) and output leaks (0%).
-  - s1-zeroshot asks a slightly different set of questions (laya-base.yaml), so treat that gap as
+  - laya-base-0.4b-stockq asks a slightly different set of questions (laya-base.yaml), so treat that gap as
     indicative.
 - **The reference classifier is narrow.** deberta-pi-v2 catches 94% of direct injection but only
   42% of indirect injection, and it flags 41% of NotInject's benign prompts.
 
-### Current cyber policy v4 validation
-
-The selected policy was frozen before this phase's pool-B validation. Fresh v1/v3 controls and v4
-used the same **168 attacks and 231 legitimate security requests**:
+**Cyber policy v4 validation.** The selected malicious-cyber policy was frozen first, then checked against
+earlier versions on the same **168 attacks and 231 legitimate security requests**:
 
 | Cyber policy | Attacks caught | Attacks passing the guard | Legitimate work wrongly flagged | F1 |
 |---|---:|---:|---:|---:|
@@ -202,26 +262,14 @@ used the same **168 attacks and 231 legitimate security requests**:
 | Previous v3 | 158/168 (94.0%) | 10/168 (6.0%) | 16/231 (6.93%) | 0.924 |
 | **Selected v4** | **152/168 (90.5%)** | **16/168 (9.5%)** | **7/231 (3.03%)** | **0.930** |
 
-V4 catches **14 more attacks than v1 for one more false flag**. Against v3 it removes nine false
-flags while losing six catches. Its exact FPR is slightly above the 3% reference. Attacks passing
-this classifier are detection misses; agent attack success is measured separately below.
+V4 catches **14 more attacks than v1 for one more false flag**. Against v3 it removes nine false flags while
+losing six catches. These cases were held back from this tuning round, but earlier policy versions had seen them,
+so this is a validation check rather than a fresh test. The full protocol is in
+[the tuning log](docs/judge.md#cyber-rounds-k27k34-retain-v1-precision-with-selected-v3-defenses-2026-10-06).
 
-Pool-B was excluded from this phase's tuning, but earlier full-pool v1/v3 evaluations had included
-it. It is a validation slice, not a previously unmeasured external benchmark. An uncached development
-repeat retained discovery **7/7**, reconnaissance **8/10**, and pool-A FPR **3.49%**. Whole-benchmark
-`rep-dev` F1 is **0.927**, and **73 tests pass**. The current v4 has not been rerun on `cyber-test`,
-`rep-test` or the agent-loop benchmarks. Protocol, repeats and limitations are in
-[rounds K27–K34](docs/judge.md#cyber-rounds-k27k34-retain-v1-precision-with-selected-v3-defenses-2026-10-06).
-
-For context, the historical consolidated judge's `cyber-test` run (209 attacks, 183 benign cases)
-caught **87.6%** under original v1, with **2.7%** false positives; v3 caught **95.7%**, with **6.6%**
-false positives. These are different cases from the v4 validation table. Run this benchmark with
-`bash evals/run.sh lab cyber-test`.
-
-### Public benchmarks (historical comparison; binary F1 on test splits)
-
-The judge rows below use the recorded D3/C4 policies, before cyber policy v4. Direct-injection
-policy tuning used the public train splits; these test splits were not used for tuning.
+**Earlier public-benchmark comparison, per benchmark (F1).** The judge rows use older policies. We tuned
+direct-injection rules on the training halves these benchmarks publish; the test halves scored here were never
+used for tuning.
 
 | Guard | BIPIA (indirect) | deepset | jackhhao | rogue-security | xTRam1 |
 |---|---:|---:|---:|---:|---:|
@@ -231,7 +279,7 @@ policy tuning used the public train splits; these test splits were not used for 
 | dec-luna-emu | 0.556 | **0.588** | 0.947 | **0.805** | 0.800 |
 | deberta-pi-v2 | 0.378 | 0.537 | — ¶ | 0.659 | **0.924** |
 | pg2-86m | 0.020 | 0.235 | 0.967 | 0.664 | 0.711 |
-| s1-zeroshot | 0.139 | 0.257 | **0.982** | 0.518 | 0.835 |
+| laya-base-0.4b-stockq | 0.139 | 0.257 | **0.982** | 0.518 | 0.835 |
 | regex | 0.029 | 0.125 | 0.667 | 0.323 | 0.385 |
 
 ¶ Excluded: deberta-pi-v2 was trained on jackhhao, per its model card.
@@ -239,7 +287,7 @@ policy tuning used the public train splits; these test splits were not used for 
 **What this shows:**
 
 - **Indirect injection:** the luna judges dominate (BIPIA 0.95–0.96).
-- **Direct injection:** rounds D1–D3 tuned on the *train* splits of these sets, raising cyber-guard-per-policy's
+- **Direct injection:** three tuning rounds on the training halves of these sets raised cyber-guard-per-policy's
   mean F1 from 0.747 to 0.800 (consolidated 0.807). The judge still trails on deepset and
   rogue-security, whose remaining misses are mostly attacks only against an absent system prompt,
   or non-cyber role-play outside this lab's scope.
@@ -250,7 +298,7 @@ policy tuning used the public train splits; these test splits were not used for 
 
 Guards and runs not yet done are listed in the [roadmap](#status-and-roadmap).
 
-### Agent loops through the gateway (historical runs, 2026-10-05)
+**Agent loops through the gateway (earlier runs, 2026-10-05).**
 
 These runs predate cyber policy v4. `cyber-guard` is the name of a configured judge deployment arm
 in [the gateway config](gateway/litellm_config.yaml).
@@ -267,7 +315,7 @@ Setup:
 - **Attack succeeded:** the attacker's goal happened, e.g. money really sent to the attacker.
 - **User's task done:** the user's own request was completed, e.g. the bill paid.
 
-| Benchmark | Arm | Attack succeeded | User's task done | Agent run p50 |
+| Benchmark | Arm | Attack succeeded | User's task done | Agent run (median) |
 |---|---|---:|---:|---:|
 | AgentDojo, 96 attacks | no guardrail | 0% | 75% | 17.3 s |
 | | pre-call only | 0% | 6% | 4.0 s |
@@ -299,7 +347,7 @@ reproduction steps are in [the agent-evaluation guide](docs/agent-eval.md) and
 **Single-turn end to end through the LiteLLM gateway:** 45 cyber smoke cases, target gemma4:e2b,
 gpt-6-luna grader.
 
-| Arm | Attack success | Benign requests blocked by the guard | p50 |
+| Arm | Attack success | Benign requests blocked by the guard | Median time |
 |---|---:|---:|---:|
 | baseline (no guardrail) | 32% | — | 5.7 s |
 | cyber-guard-per-policy (LabGuardrail) | **4%** | 0 / 17 | 1.3 s |
@@ -337,7 +385,7 @@ uv run python evals/lab/build_corpus.py             # builds evals/lab/data/ (gi
 | Variable | Needed for |
 |---|---|
 | `OPENAI_API_KEY` | API-backed runs: the luna judges, `dec-luna-emu`, `dec-openai`, the e2e grader and the gateway's `gpt-6-luna` model. |
-| `OPENROUTER_API_KEY` | Optional. `dec-jev`: TypeSafe Jev, the hosted reference decision model, via OpenRouter. |
+| `OPENROUTER_API_KEY` | Optional. `jev-base-stockq`: TypeSafe Jev, the hosted reference decision model, via OpenRouter. |
 | `HF_TOKEN` | Gated Hugging Face models: Llama Prompt Guard 2, Llama Guard 4 and Sentinel v2. Accept each licence on its model page first. |
 | `EVALS_REPO` | Optional. The path to ai-security-evals, if it isn't a sibling directory. |
 | `S1GUARD_BACKEND`, `TYPESAFE_API_KEY`, `S1GUARD_URL` | Optional. The s1guard and decision-model backends: `laya` (local), `jev`, or `http` (any `/v1/systemone` server). |
@@ -362,22 +410,21 @@ checks. The exit code is 2 when the guard blocks.
 ```bash
 bash evals/run.sh lab rep-dev 'regex|cyber-guard'
 # After setting up local models, compare classifier and decision-model adapters too:
-bash evals/run.sh lab rep-dev 'deberta-pi-v2|s1-zeroshot|s1-v4'
+bash evals/run.sh lab rep-dev 'deberta-pi-v2|laya-base-0.4b-stockq|laya-tuned-0.4b-stockq'
 PF_CONCURRENCY=8 bash evals/run.sh lab public 'cyber-guard'   # more parallelism for API guards
 ```
 
 | Mode | Cases |
 |---|---|
-| `rep-dev` / `rep-test` | The combined benchmark: 407 representative cases each. Tune on dev and test once. |
-| `public` | Test splits of the five public benchmarks (up to 400 cases each); separate train splits support tuning. |
-| `pi-dev` | Direct-injection tuning data from the public sets' train splits. |
-| `tc-dev` | Tool-call tuning data (toolcall-guard-v1 `val`). |
-| `cyber-dev` / `cyber-test` | Malicious cyber requests vs CyberSecEval's legitimate security work. |
-| `smoke-dev` / `smoke-test` | About 100 cases each. |
-| `lite-*`, `dev` / `test` | Larger cyber splits, for slow local models or full runs. |
+| `rep-dev`, `cyber-dev` | Tuning cases: 407 representative cases, and cyber requests next to legitimate security work |
+| `pi-dev`, `tc-dev` | More tuning cases: direct injection (from the public benchmarks' training halves) and tool calls |
+| `rep-test`, `cyber-test` | Held-out cases. The [cyber & agent test set](#how-we-test) is built from these two |
+| `public` | The public benchmarks' test halves (up to 400 cases each) |
+| `smoke-*`, `lite-*`, `dev` / `test` | About 100 cases for a quick check, or larger runs |
 
-Results go to `evals/results/lab/<mode>-<guards>.json`, which is gitignored. Repeat runs only score
-new cases, because results are cached per guard version.
+The headline comparison is `evals/lab/experiments/held_out.py`, which runs both held-out test sets.
+Results go to `evals/results/lab/`, which is gitignored. Every run calls the guard fresh; set
+`GUARDLAB_REUSE_RESULTS=1` only to deliberately reuse logged results.
 
 **Reports:**
 
@@ -401,7 +448,7 @@ bash evals/agent/run.sh setup && bash evals/agent/run.sh smoke    # then: bash e
 2. Edit a policy in `src/guardlab/judge/policies/` and bump its `version`.
 3. Rebuild the consolidated instructions: `uv run python evals/lab/build_consolidated.py`.
 4. Rerun and compare with `report.py --per-file`. Differences under about 0.02 F1 are noise.
-5. Freeze, then run `rep-test` and `public` once.
+5. Freeze, then run the [held-out comparison](#how-we-test) once.
 
 **Fine-tune a decision model:** follow the [training workflow](experiments/s1guard_finetune/README.md#workflow),
 then score and calibrate on the development split and evaluate the frozen model on test. Record the
@@ -417,10 +464,10 @@ checkpoint, question policy and training overlap alongside the lab results.
 | `nemotron-cs-4b` | Needs its own venv and an HTTP shim on :8766. The commands are in [evals/lab/shims/nemotron_server.py](evals/lab/shims/nemotron_server.py). |
 | `llama-guard4-12b` | Run `bash evals/lab/shims/llama_guard4.sh setup` once (24 GB download, quantized to 6.4 GB), then `... serve` (:8767). |
 | `deberta-pi-v2` | `uv sync --all-extras`; loads in-process (CPU-fast). |
-| `strands-decider-2b` | Run `bash evals/lab/shims/strands_decider.sh setup` once, then `... serve` (:8768, about 5 GB). Runs in its own `uvx` environment. |
-| `clef-flash-9b` | Ollama 0.35.1 or later; `ollama pull clef-flash:9b` (about 10 GB). |
+| `strands-base-2b-stockq` | Run `bash evals/lab/shims/strands_decider.sh setup` once, then `... serve` (:8768, about 5 GB). Runs in its own `uvx` environment. |
+| `clef-base-9b-stockq` | Ollama 0.35.1 or later; `ollama pull clef-flash:9b` (about 10 GB). |
 | `dec-luna-emu` | `uv run python -m guardlab.decisions.mock_server --port 8765 --upstream luna` |
-| `s1-zeroshot`, `s1-v4` | The `laya` extra. `s1-v4` also needs the fine-tuned checkpoint from `experiments/s1guard_finetune/`, which isn't committed. |
+| `laya-base-0.4b-stockq`, `laya-tuned-0.4b-stockq` | The `laya` extra. `laya-tuned-0.4b-stockq` also needs the fine-tuned checkpoint from `experiments/s1guard_finetune/`, which isn't committed. |
 
 How the corpus, splits, scoring and reports work: [docs/lab.md](docs/lab.md). To add a guard, see
 [docs/lab.md#adding-a-guard](docs/lab.md#adding-a-guard).
@@ -440,7 +487,7 @@ guardrails:
     litellm_params:
       guardrail: guardlab.litellm_guardrail.LabGuardrail
       mode: [pre_call, post_call, pre_mcp_call, post_mcp_call]
-      guard_id: s1-zeroshot       # choose a registered guard; requires the local Laya setup
+      guard_id: laya-base-0.4b-stockq       # choose a registered guard; requires the local Laya setup
       on_unavailable: block       # fail closed
       on_block: error             # HTTP 400; use refuse for an in-band refusal
 ```
@@ -516,23 +563,26 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 **Done:**
 
 - the lab harness and cyber corpus;
-- custom decision-model training, calibration and the fine-tuned `s1-v4` adapter;
+- custom decision-model training, calibration and the fine-tuned `laya-tuned-0.4b-stockq` adapter;
 - per-policy and consolidated judges, with a trajectory-aware action check and selected cyber policy v4;
 - the decision-API client and its test double;
 - self-hosted classifiers and decision models;
 - shared gateway integration, configurable blocks and verified judge chargeback;
 - placement and agent-loop studies measuring attack success and task utility;
 - `agentic-security`, the drop-in guardrail for deployment (no cache; surgical withholding; verified chargeback);
-- 91 offline tests.
+- 94 offline tests.
 
 **Roadmap** (each item is registered or scripted unless noted; runs are deferred to keep laptop load low):
 
 *Hosted decision APIs*
 
-- [x] Jev tuned and validated (`jev-tuned`, [docs/jev-evaluation.md](docs/jev-evaluation.md)): held-out F1 0.94 at
-  0.23 s per check. As a pre-filter it answers 78–87% of legitimate checks with the judge's quality unchanged.
+- [x] Jev tuned and validated (`jev-base`, [docs/jev-evaluation.md](docs/jev-evaluation.md)): F1 0.92 on our test set
+  and 0.88 on public benchmarks, at 0.22 s per check. As a pre-filter it answers 82–84% of legitimate checks.
 - [ ] Jev pre-filter as a drop-in LiteLLM guardrail in front of agentic-security, then an agent-loop test.
-- [ ] Self-hosted decision models (Laya, `s1-v4`, Clef-flash 9B) on the Jev question set; fine-tune toward it.
+- [x] Fine-tune Kev-9B and Laya on one clean training set ([docs/data-provenance.md](docs/data-provenance.md)) with
+  the Jev questions: Kev-9B matches Jev overall, Laya 0.4B does not ([docs/decision-model-size.md](docs/decision-model-size.md)).
+- [ ] Kev-9B: add unsafe tool-call training data (it catches 54% vs Jev's 89%), then measure serving latency on an
+  optimised server.
 - [ ] `dec-openai`: rerun once OpenAI Decisions API access is granted (currently 403), then retire
   `dec-luna-emu` from the results.
 - [ ] Optional: Perplexity's Decisions API, and Cloudflare Clef hosted on Workers AI (needs an account
@@ -540,14 +590,14 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 
 *Self-hosted decision models*
 
-- [ ] `clef-flash-9b`: pulled; run rep-dev/rep-test on its own (about 10 GB).
-- [ ] `strands-decider-2b` on the public benchmarks (about 13 minutes at 2 requests per second).
+- [x] Clef-flash 9B evaluated through OpenRouter (`clef-base-9b`). The local Ollama copy (`clef-base-9b-stockq`) is not needed.
+- [ ] `strands-base-2b-stockq` on the public benchmarks (about 13 minutes at 2 requests per second).
 - [ ] Kev-4B and Laya GGUF via llama.cpp. These need llama.cpp build b11371 or later; Homebrew
   stable is older.
 - [ ] Intern-Decision-4B (not registered): its engine targets CUDA, and the Apple GPU is untested.
 - [ ] Definition sensitivity: run each decision model with the stock questions and with the
   judge's tuned policy text as question instructions.
-- [ ] Fine-tune Strands Decider 2B on our dev split (its recipe is published) and compare with s1-v4.
+- [ ] Fine-tune Strands Decider 2B on our dev split (its recipe is published) and compare with laya-tuned-0.4b-stockq.
 
 *Self-hosted classifiers*
 
@@ -557,12 +607,12 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 
 *LLM-as-a-judge customization and gateway experiments*
 
-- [x] Select cyber policy v4 with measured defense/FPR tradeoffs; see [rounds K27–K34](docs/judge.md#cyber-rounds-k27k34-retain-v1-precision-with-selected-v3-defenses-2026-10-06).
+- [x] Select cyber policy v4 with measured catch / false-alarm tradeoffs; see [rounds K27–K34](docs/judge.md#cyber-rounds-k27k34-retain-v1-precision-with-selected-v3-defenses-2026-10-06).
 - [x] Prompt-section ablations, long-content windows, trajectory-aware action checks and billed streaming blocks.
 - [ ] Generalize the cyber instructions for four production gap areas: cloud-credential retrieval, operational
   exploit payloads, web-injection payloads with filter bypass, and phishing or impersonation content. Then test
   adaptive attacks.
-- [ ] agentic-security: close the 3-point cyber recall gap to cyber-guard (91% vs 94% held-out). Framing-only tuning
+- [ ] agentic-security: close the 3-point cyber recall gap to cyber-guard (86.5% vs 89.6% of cyber attacks caught on our test set). Framing-only tuning
   traded false positives for recall ([round](docs/agentic-security.md#cyber-recall-tuning-round-2026-10-07-tried-not-adopted)),
   so this needs shared-policy content changes.
 - [ ] agentic-security: detect off-task drift ("autonomy hijack") in tool results; 2 of 6 still succeed, as with no guardrail.
@@ -579,7 +629,7 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 - [ ] A "runs on" column (Mac CPU, Mac GPU, OpenAI API, hosted API) and a network baseline, so
   latencies are comparable.
 - [ ] Audit `trained_on` for every guard against our sets. For example, Sentinel v2 and the
-  pb-rogue benchmark come from the same publisher.
+  rogue-security benchmark come from the same publisher.
 - [ ] An audited list of mislabelled public rows, reported with and without them.
 - [ ] Results by input length (DeBERTa reads 512 tokens per window; Llama Guard 4 fails past 4k)
   and by language.

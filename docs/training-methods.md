@@ -768,7 +768,7 @@ uv run python $B/calibrate_policy.py --tag ft4 --out $B/policies/laya-s1guard-v4
 # showdown vs public guards + hybrid policy (§8.7)
 uv run python $B/calibrate_policy.py --tag base --out $B/policies/laya-base.yaml
 uv run python experiments/showdown/showdown.py build
-for g in regex protectai horizon s1-zeroshot s1-v2 s1-v3 s1-v4; do uv run python experiments/showdown/showdown.py run --guard $g; done
+for g in regex protectai horizon laya-base-0.4b-stockq s1-v2 s1-v3 laya-tuned-0.4b-stockq; do uv run python experiments/showdown/showdown.py run --guard $g; done
 uv run python experiments/showdown/showdown.py report && uv run python experiments/showdown/showdown.py hybrid-policy
 ```
 

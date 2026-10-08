@@ -1,7 +1,7 @@
 """Guard registry: guards.yaml maps a guard id to an adapter and its config.
 
     from guardlab import load_guard
-    g = load_guard("s1-v4")
+    g = load_guard("laya-tuned-0.4b-stockq")
     g.check(Case("Ignore previous instructions", stage="input"))
 
 `${VAR}` in values expands from the environment (and `${REPO}` to the repo root). Point

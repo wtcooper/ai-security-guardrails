@@ -26,9 +26,9 @@ backend on the lab dev split before deploying.
 |---|---|---|
 | `dec-openai` | OpenAI `/v1/decisions` with your key | Returns `unavailable`: HTTP 403 "Decision API is not enabled for this user" (invite-only preview) |
 | `dec-luna-emu` | Local emulator, same schema, answered by gpt-6-luna | Live. A test double for the adapter, thresholds and gateway path, not a decision model |
-| `dec-jev` | TypeSafe Jev via OpenRouter `/api/v1/systemone` | Registered; needs `OPENROUTER_API_KEY` |
-| `strands-decider-2b` | AWS Strands Decider 2B, self-hosted (`evals/lab/shims/strands_decider.sh serve`, :8768) | Evaluated (see the README) |
-| `clef-flash-9b` | Cloudflare Clef-flash, self-hosted via Ollama ≥ 0.35.1 `/v1/systemone` | Pulled and registered; not run yet |
+| `jev-base-stockq` | TypeSafe Jev via OpenRouter `/api/v1/systemone` | Registered; needs `OPENROUTER_API_KEY` |
+| `strands-base-2b-stockq` | AWS Strands Decider 2B, self-hosted (`evals/lab/shims/strands_decider.sh serve`, :8768) | Evaluated (see the README) |
+| `clef-base-9b-stockq` | Cloudflare Clef-flash, self-hosted via Ollama ≥ 0.35.1 `/v1/systemone` | Pulled and registered; not run yet |
 
 The Jev-family backend (`JevHTTPBackend`) also covers TypeSafe directly, Cloudflare Workers AI
 (`unwrap: result`) and `laya[serve]`. Ollama 0.35.1+ and llama.cpp (b11371+) serve open decision

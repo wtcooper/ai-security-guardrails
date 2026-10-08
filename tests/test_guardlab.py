@@ -47,8 +47,8 @@ def test_unsupported_stage():
 
 
 def test_registry_loads_and_expands_repo(monkeypatch):
-    assert {"regex", "s1-v4", "pg2-86m"} <= set(list_guards())
-    g = load_guard("s1-v4")
+    assert {"regex", "laya-tuned-0.4b-stockq", "pg2-86m"} <= set(list_guards())
+    g = load_guard("laya-tuned-0.4b-stockq")
     assert g.cfg["policy"].endswith("experiments/s1guard_finetune/policies/laya-s1guard-v4.yaml")
     assert "s1guard_train" in g.meta["trained_on"]
     with pytest.raises(KeyError):
@@ -86,11 +86,15 @@ def test_hf_classifier_takes_max_over_windows():
     assert r.blocked and r.score == 0.9 and len(seen) > 1
 
 
-def test_cache_returns_hit_and_skips_failures(tmp_path):
+def test_results_are_fresh_by_default_and_reused_only_on_request(tmp_path, monkeypatch):
     g = Flaky(fails=0)
-    r1, hit1 = get_or_run(g, Case("x"), tmp_path)
-    r2, hit2 = get_or_run(g, Case("x"), tmp_path)
-    assert (hit1, hit2, g.calls) == (False, True, 1) and r2.score == r1.score
+    get_or_run(g, Case("x"), tmp_path)
+    _, hit = get_or_run(g, Case("x"), tmp_path)
+    assert (hit, g.calls) == (False, 2)   # every run is fresh inference by default
+    monkeypatch.setenv("GUARDLAB_REUSE_RESULTS", "1")
+    r1, hit1 = get_or_run(g, Case("z"), tmp_path)
+    r2, hit2 = get_or_run(g, Case("z"), tmp_path)
+    assert (hit1, hit2, g.calls) == (False, True, 3) and r2.score == r1.score
     bad = Flaky("bad", fails=99)
     get_or_run(bad, Case("y"), tmp_path)
     assert not (tmp_path / "bad.jsonl").exists()

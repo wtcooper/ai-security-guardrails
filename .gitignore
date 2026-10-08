@@ -16,3 +16,6 @@ evals/lab/data/*
 !evals/lab/data/manifest.json
 .venv-nemotron/
 .venv-inspect/
+training/decision_models/data/
+training/decision_models/vendor/
+training/decision_models/results/

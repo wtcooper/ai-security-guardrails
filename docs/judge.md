@@ -76,7 +76,7 @@ output v2, common v2), stage 1 `reasoning_effort: none`, stage 2 (low) only for 
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | cyber-guard-per-policy | 2526/2263 | 81% | 9% | 0.85 | 0.890 | 73% | 782 | 1806 | 0.13 |
 | cyber-guard-combined | 2526/2262 | 79% | 9% | 0.84 | 0.878 | 43% | 709 | 1339 | 0.05 |
-| s1-v4 (reference) | 2397/2149 | 51% | 10% | 0.64 | 0.795 | 33% | 194 | 1083 | — |
+| laya-tuned-0.4b-stockq (reference) | 2397/2149 | 51% | 10% | 0.64 | 0.795 | 33% | 194 | 1083 | — |
 
 - **Generalization:** dev F1 was 0.865 and test is 0.85. The tuning generalized; it did not overfit dev.
 - **Remaining test weak spots:**

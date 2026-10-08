@@ -2,7 +2,7 @@
 # AWS Strands Decider 2B (Apache-2.0): a self-hosted decision model (Qwen3.5-2B-Base + LoRA + pointer head)
 # served on POST /v1/systemone by its own CLI, in an isolated uvx environment (the lab venv stays clean).
 #   bash evals/lab/shims/strands_decider.sh setup    # download the pinned checkpoint (the base model downloads on first serve)
-#   bash evals/lab/shims/strands_decider.sh serve    # :8768 (guard id: strands-decider-2b); ~5 GB on the Apple GPU
+#   bash evals/lab/shims/strands_decider.sh serve    # :8768 (guard id: strands-base-2b-stockq); ~5 GB on the Apple GPU
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 [ -f "$ROOT/.env" ] && { set -a; source "$ROOT/.env"; set +a; }

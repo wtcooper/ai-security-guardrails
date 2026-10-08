@@ -2,7 +2,7 @@
 
 > This was the repo's original README. s1guard (fine-tuned Laya on a question battery) is now one guard
 > family in the [guardrail lab](../README.md). Its training work is paused; it remains runnable as the
-> `s1-zeroshot` and `s1-v4` guards. Methods: [training-methods.md](training-methods.md).
+> `laya-base-0.4b-stockq` and `laya-tuned-0.4b-stockq` guards. Methods: [training-methods.md](training-methods.md).
 
 A low-latency, low-cost **runtime guardrail classifier built on System One models**, meaning
 non-generative models that answer typed questions with calibrated probabilities in a

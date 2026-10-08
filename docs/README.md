@@ -7,9 +7,11 @@ and evaluating their gateway behavior.
 |---|---|
 | [benchmark.md](benchmark.md) | The combined cyber benchmark (OWASP LLM/MCP/Agentic + MITRE coverage map) and the five public benchmarks |
 | [lab.md](lab.md) | How the evaluation works: corpus, splits, run modes, scoring, adding a guard, gotchas |
+| [decision-model-size.md](decision-model-size.md) | Self-hosted decision models by size and fine-tuning (Laya 0.4B to Kev-9B) vs Jev on the two held-out test sets |
+| [data-provenance.md](data-provenance.md) | Training and evaluation corpus: every source, licence, split, exclusion and contamination control; model-weight licences; future data sources |
 | [agent-eval.md](agent-eval.md) | Agent-loop eval: vanilla Inspect AgentDojo + AgentThreatBench through the gateway, three guardrail arms, wiring checks |
 | [agentic-security.md](agentic-security.md) | The drop-in enterprise guardrail: one judge call per hook over a recent window, no cache, surgical withholding; accuracy, system-prompt, latency and agent-loop results vs cyber-guard |
-| [jev-evaluation.md](jev-evaluation.md) | TypeSafe Jev (hosted decision model) as a runtime guardrail: success criteria, tuning rounds J0–J6, dev results, cascade analysis, preliminary verdict (held-out pending OpenRouter credits) |
+| [jev-evaluation.md](jev-evaluation.md) | TypeSafe Jev (hosted decision model) as a runtime guardrail: success criteria, tuning rounds, held-out results, pre-filter analysis, verdict |
 | [guardrail-placement.md](guardrail-placement.md) | Where to put the guardrail in LiteLLM: the during_call chargeback test, pre-call vs action-check coverage of agentic risk, the recommended `cyber-guard` config |
 | [chargeback.md](chargeback.md) | Billing the judge guardrail's model calls to the caller's LiteLLM key (verified in the spend DB) |
 | [judge.md](judge.md) | LLM-as-a-judge design and tuning history, including selected cyber policy v4 and frozen validation |
