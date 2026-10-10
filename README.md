@@ -213,7 +213,7 @@ Every guardrail we compared, grouped by approach. All scored on the same two hel
 | `laya-tuned-0.4b-v2` | Laya (ModernBERT-large, 0.4B) fine-tuned by us on the same records | **0.86** (0.83–0.89) · 89% · 28.8% | **0.73** (0.71–0.76) · 74% · 21.2% | 0.07 s (1× L4 GPU) | Too small: flags 29% of legitimate cases |
 | `laya-tuned-0.4b` | Our earlier Laya fine-tune (older question set) | **0.81** (0.77–0.84) · 99% · 75.2% | not clean (trained on these) | 0.06 s (1× L4 GPU) | Retired |
 | `laya-base-0.4b` | Laya, out of the box | **0.77** (0.73–0.80) · 95% · 87.6% | **0.58** (0.56–0.61) · 80% · 73.8% | 0.06 s (1× L4 GPU) | Baseline |
-| `strands-base-2b` | AWS Strands Decider 2B, out of the box | **0.74** (0.70–0.78) · 80% · 57.5% | not run | 0.71 s (Mac) | Benchmarked |
+| `strands-base-2b` | AWS Strands Decider 2B, out of the box | **0.74** (0.70–0.78) · 80% · 57.5% | **0.68** (0.65–0.71) · 70% · 27.4% | 6.8 s (Mac) | Benchmarked |
 | **Self-hosted classifier: a safety model we run locally** | | | | | |
 | `safeguard-20b` | OpenAI gpt-oss-safeguard 20B: a reasoning model that follows whatever policy it is given; given our judge's policies, one call per policy | **0.93** (0.90–0.95) · 89% · 4.6% | **0.83** (0.80–0.85) · 72% · 1.2% | 3.7 s (Mac) | Benchmarked |
 | `nemotron-cs-4b` | NVIDIA Nemotron 3.5 Content Safety 4B, given our policy text as a custom policy | **0.84** (0.80–0.87) · 77% · 11.8% | **0.77** (0.74–0.80) · 67% · 4.8% | 4.5 s (Mac) | Benchmarked |
@@ -667,7 +667,8 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 *Self-hosted decision models*
 
 - [x] Clef-flash 9B evaluated through OpenRouter (`clef-base-9b`). The local Ollama copy (`clef-base-9b-stockq`) is not needed.
-- [ ] `strands-base-2b-stockq` on the public benchmarks (about 13 minutes at 2 requests per second).
+- [x] Strands Decider 2B on the public benchmarks with the tuned questions (`strands-base-2b`): F1 0.68, with 27% false
+  alarms.
 - [ ] Kev-4B and Laya GGUF via llama.cpp. These need llama.cpp build b11371 or later; Homebrew
   stable is older.
 - [ ] Intern-Decision-4B (not registered): its engine targets CUDA, and the Apple GPU is untested.
