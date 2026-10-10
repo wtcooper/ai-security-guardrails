@@ -29,6 +29,8 @@ Every model is asked the same thing, scored on the same cases, and decided by th
 
 ## Results at Jev's thresholds
 
+(`agentic-security` rows: fresh run of 2026-10-09, after the reliability fixes.)
+
 "Caught" is the share of attacks blocked. "False alarms" is the share of legitimate cases blocked. AUROC measures
 how well a model's score ranks attacks above legitimate cases, ignoring the threshold (1.0 is perfect).
 
@@ -43,7 +45,7 @@ how well a model's score ranks attacks above legitimate cases, ignoring the thre
 | laya-tuned-0.4b (our older fine-tune) | 0.4B | Modal L4 | 0.81 | 99% | 75.2% | not clean * | | | 0.88 / — |
 | laya-base-0.4b | 0.4B | Modal L4 | 0.77 | 95% | 87.6% | 0.58 | 80% | 73.8% | 0.61 / 0.71 |
 | strands-base-2b | 2B | Mac (local) | 0.74 | 80% | 57.5% | not run | | | 0.77 / — |
-| *For reference:* agentic-security (LLM judge) | — | gpt-6-luna | 0.90 | 85% | 5.2% | 0.87 | 78% | 1.3% | 0.92 / 0.90 |
+| *For reference:* agentic-security (LLM judge) | — | gpt-6-luna | 0.91 | 85% | 4.6% | 0.86 | 78% | 1.9% | 0.92 / 0.91 |
 
 \* The older Laya fine-tune trained on 317 of the public-benchmark cases, so its public results are not reported.
 
@@ -68,8 +70,8 @@ F1, with the share caught and false alarms in brackets.
 | Cases | jev-base | kev-tuned-9b | kev-base-9b | laya-tuned-0.4b-v2 | agentic-security |
 |---|---|---|---|---|---|
 | Cyber requests (239) | 0.95 (92% / 4%) | **0.98 (96% / 3%)** | 0.93 (94% / 17%) | 0.92 (87% / 3%) | 0.92 (87% / 5%) |
-| Injection in user input (75) | 0.86 (78% / 3%) | **0.89 (85% / 9%)** | 0.83 (83% / 21%) | 0.59 (46% / 12%) | 0.86 (76% / 0%) |
-| Agent tool calls (50) | **0.89 (89% / 14%)** | 0.67 (54% / 9%) | 0.68 (54% / 5%) | 0.13 (7% / 5%) | 0.81 (79% / 18%) |
+| Injection in user input (75) | 0.86 (78% / 3%) | **0.89 (85% / 9%)** | 0.83 (83% / 21%) | 0.59 (46% / 12%) | 0.85 (73% / 0%) |
+| Agent tool calls (50) | **0.89 (89% / 14%)** | 0.67 (54% / 9%) | 0.68 (54% / 5%) | 0.13 (7% / 5%) | **0.89 (89% / 14%)** |
 | Tool results and definitions (43) | 0.87 (77% / 0%) | 0.90 (82% / 0%) | 0.31 (18% / 0%) | 0.16 (9% / 5%) | **0.98 (95% / 0%)** |
 
 The per-type samples are small (43–75 cases outside cyber requests), so differences under about 0.1 F1 are not
@@ -82,7 +84,7 @@ reliable.
 | Microsoft BIPIA (injection in documents) | 0.86 | 0.90 | **0.96** | 0.29 |
 | deepset | 0.79 | **0.83** | 0.59 | 0.71 |
 | jackhhao | 0.96 | **0.97** | 0.94 | 0.81 |
-| rogue-security | **0.81** | 0.78 | 0.72 | 0.78 |
+| rogue-security | **0.81** | 0.78 | 0.70 | 0.78 |
 | xTRam1 | **0.97** | **0.97** | 0.89 | 0.94 |
 
 Our training set includes the separate training halves of deepset and jackhhao. These cases were never trained

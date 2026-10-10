@@ -486,7 +486,7 @@ guards:
     adapter: policy_shim
     family: oss-classifier (policy-following)
     license: NVIDIA OpenMDW-1.1 + Gemma terms
-    base_url: http://127.0.0.1:8766
+    base_url: http://127.0.0.1:8776
     notes: >-
       Nemotron-3.5-Content-Safety (rev 35645ed3543b) in custom-policy mode with cyber-guard-per-policy's cyber policies;
       runs in .venv-nemotron behind evals/lab/shims/nemotron_server.py (start it first)

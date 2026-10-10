@@ -3,7 +3,7 @@
 
     uv venv .venv-nemotron --python 3.12
     uv pip install --python .venv-nemotron "transformers==4.57.6" "torch==2.8.0" pillow accelerate
-    .venv-nemotron/bin/python evals/lab/shims/nemotron_server.py --port 8766
+    .venv-nemotron/bin/python evals/lab/shims/nemotron_server.py --port 8776
 
 POST /classify {"text", "stage", "policy", "user_request"?} -> {"p_unsafe": float, "verdict": str}
 Uses Nemotron's custom-policy mode (the policy text is supplied per request) with thinking off, and
@@ -63,7 +63,7 @@ class Nemotron:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", type=int, default=8766)
+    ap.add_argument("--port", type=int, default=8776)
     a = ap.parse_args()
     nem = Nemotron()
 
