@@ -17,11 +17,12 @@ The best performer in each of the four approaches, on the same two held-out test
 | Approach | Best performer | What it is | F1: our test set / public | Median latency per check | Cost per 1,000 checks | Status |
 |---|---|---|---|---|---|---|
 | **LLM-as-a-judge** | `agentic-security` | gpt-6-luna reads our written policies over the last 10 messages; drop-in LiteLLM guardrail | **0.91** / 0.86 | 0.90 s (OpenAI API) | about $0.06 (single messages; more on long agent loops) | **Active, ready to deploy:** no cache, no extra services |
-| **Hosted decision API** | `jev-base` | TypeSafe Jev via OpenRouter, asked our policies as yes/no questions; one call returns a probability per question | **0.92** / 0.88 | **0.22 s** (OpenRouter) | about $0.08 | **Active:** pre-filter in front of the judge |
+| **Hosted decision API** | `jev-base` | TypeSafe Jev via OpenRouter, asked our policies as yes/no questions; one call returns a probability per question | **0.92** / 0.88 | **0.22 s** (OpenRouter) | about $0.08 | **Active:** strongest single guard on the public benchmarks |
 | **Self-hosted decision model** | `kev-tuned-9b` | Kev-9B (open weights) fine-tuned by us on clean public data, asked the same questions | **0.93** / **0.89** | 0.38 s (one H100, unoptimised runner) | about $0.42 on a rented H100 at that speed (estimate; batching would cut it) | **Active:** matches Jev; weaker on agent tool calls; needs a GPU server |
 | **Self-hosted classifier** | `safeguard-20b` | OpenAI gpt-oss-safeguard 20B (open weights), a reasoning model following our judge's policies | **0.93** / 0.83 | 3.7 s (Mac) | own hardware; needs a GPU server in production | Benchmarked; not under active tuning |
 
-F1 combines attacks caught and legitimate cases wrongly flagged into one score from 0 to 1. All 24 guardrails we
+F1 combines attacks caught and legitimate cases wrongly flagged into one score from 0 to 1. On our test set the four
+are within about 0.03 of each other, inside the run-to-run noise. All 24 guardrails we
 compared, with attacks caught, false alarms and short descriptions, are in the
 [full comparison](#head-to-head-on-the-two-held-out-test-sets).
 Next up, not yet evaluated: Microsoft-Decision-1, the OpenAI Decisions API, Google Model Armor, Azure Prompt
@@ -35,8 +36,9 @@ one Python file, two prompt files and a config entry, with no cache, no state an
 - **Flagged tool results:** a second call cuts only the injected lines, so the agent keeps working.
 - **Accuracy:** level with `cyber-guard` on single messages: F1 0.91 for both on our cyber & agent test set, and
   0.86 for both on the public benchmarks.
-- **Agent tasks:** AgentDojo task success is 56% under attack and 70% on benign tasks, vs 6% and 61% for
-  `cyber-guard` (73% and 78% with no guardrail).
+- **Agent tasks** (rerun 2026-10-10): AgentDojo task success is 54% under attack and 74% on benign tasks, against
+  69% and 81% with no guardrail the same day. In the 2026-10-07 run, `cyber-guard` managed 6% and 61%, because it
+  refuses the turn instead of cutting the injection.
 - **Protection:** with an agent that falls for injections (Gemma 4 e2b), attack success fell from 42% to 0%.
 - **Cost and speed:** 11× fewer judge tokens than `cyber-guard` without its cache, and about 2.0 s of classifier time
   per agent step.
@@ -53,9 +55,12 @@ probability for each security question.
 - **Speed and cost:** median 0.22 s per check, about $0.06–0.09 per 1,000 checks.
 - **Weak spot:** more false alarms than the judges on the public benchmarks (8.6% of legitimate prompts flagged, vs
   1.9–2.2%).
-- **As a pre-filter:** Jev lets through checks it scores below 0.27, and the judge decides the rest. On our test set
-  the judge's F1 holds (0.91 to 0.90) and its false alarms drop from 4.6% to 3.9%. On the public benchmarks F1
-  dips from 0.86 to 0.85. Jev alone answers 82–84% of legitimate checks.
+- **Optional: stacked in front of the judge.** Jev lets through checks it scores below 0.27, and the judge decides
+  the rest. This is an option, not part of either guardrail. Deploy it as two separate stackable guardrails, or
+  build both checks into one custom guardrail.
+  - On our test set the judge's F1 holds (0.91 to 0.90), and its false alarms drop from 4.6% to 3.9%.
+  - On the public benchmarks F1 dips from 0.86 to 0.85.
+  - Jev alone answers 82–84% of legitimate checks.
 
 ## How we test
 
@@ -191,40 +196,44 @@ same adapter.
 Every guardrail we compared, grouped by approach. All scored on the same two held-out test sets
 ([How we test](#how-we-test)), fresh runs (2026-10-09), each at its deployed setting:
 
-| Guardrail | What it is | Our test set: F1 · caught · false alarms | Public: F1 · caught · false alarms | Median latency per check | Status |
+| Guardrail | What it is | Our test set: F1 (95% CI) · caught · false alarms | Public: F1 (95% CI) · caught · false alarms | Median latency per check | Status |
 |---|---|---|---|---|---|
 | **LLM-as-a-judge: a hosted LLM reads our written policies** | | | | | |
-| `agentic-security` | Drop-in LiteLLM guardrail. gpt-6-luna rates the last 10 messages: one call before the model, one after only if it calls tools. Cuts injected lines out of tool results so the agent keeps working | **0.91** · 85% · 4.6% | **0.86** · 78% · 1.9% | 0.90 s (OpenAI API) | **Active, ready to deploy** |
-| `cyber-guard` | Lab judge: same model and policies, one call per piece of content; affordable only with a verdict cache | **0.91** · 86% · 5.2% | **0.86** · 78% · 2.2% | 0.84 s (OpenAI API) | Lab only |
-| `agentic-security-sys` | agentic-security with the application's system prompt also shown to the judge | **0.91** · 87% · 5.9% | **0.87** · 79% · 1.8% | 0.81 s (OpenAI API) | Measured alternative: more false blocks on tool calls; keep off |
+| `agentic-security` | Drop-in LiteLLM guardrail. gpt-6-luna rates the last 10 messages: one call before the model, one after only if it calls tools. Cuts injected lines out of tool results so the agent keeps working | **0.91** (0.88–0.93) · 85% · 4.6% | **0.86** (0.84–0.88) · 78% · 1.9% | 0.90 s (OpenAI API) | **Active, ready to deploy** |
+| `cyber-guard` | Lab judge: same model and policies, one call per piece of content; affordable only with a verdict cache | **0.91** (0.88–0.94) · 86% · 5.2% | **0.86** (0.84–0.88) · 78% · 2.2% | 0.84 s (OpenAI API) | Lab only |
+| `agentic-security-sys` | agentic-security with the application's system prompt also shown to the judge | **0.91** (0.89–0.94) · 87% · 5.9% | **0.87** (0.85–0.89) · 79% · 1.8% | 0.81 s (OpenAI API) | Measured alternative: more false blocks on tool calls; keep off |
 | **Hosted decision API: a provider's decision model answers our yes/no questions** | | | | | |
-| `jev-base` | TypeSafe Jev via OpenRouter, asked our tuned questions (the judge's policies phrased as questions); one call returns a probability per question | **0.92** · 88% · 4.6% | **0.88** · 87% · 8.6% | 0.22 s (OpenRouter) | **Active:** pre-filter in front of the judge |
-| `jev-base-stockq` | Same model with the original generic security questions | **0.89** · 85% · 9.2% | **0.87** · 85% · 8.7% | 0.22 s (OpenRouter) | Superseded by jev-base |
+| `jev-base` | TypeSafe Jev via OpenRouter, asked our tuned questions (the judge's policies phrased as questions); one call returns a probability per question | **0.92** (0.90–0.95) · 88% · 4.6% | **0.88** (0.86–0.90) · 87% · 8.6% | 0.22 s (OpenRouter) | **Active:** strongest single guard |
+| `jev-base-stockq` | Same model with the original generic security questions | **0.89** (0.86–0.92) · 85% · 9.2% | **0.87** (0.85–0.89) · 85% · 8.7% | 0.22 s (OpenRouter) | Superseded by jev-base |
 | **Self-hosted decision model: open weights we run (or fine-tune), asked the same questions as jev-base** | | | | | |
-| `kev-tuned-9b` | Kev-9B (Qwen3.5-9B base) fine-tuned by us on 4,375 clean records | **0.93** · 89% · 4.6% | **0.89** · 87% · 7.1% | 0.38 s (1× H100, unoptimised runner) | **Active:** matches Jev; weak on tool calls; needs a GPU server |
-| `clef-base-9b` | Cloudflare Clef-flash 9B, out of the box | **0.87** · 79% · 4.6% | **0.73** · 69% · 16.5% | 0.26 s (OpenRouter) | Benchmarked |
-| `kev-base-9b` | Kev-9B, out of the box | **0.86** · 81% · 13.7% | **0.74** · 73% · 19.4% | 2.6 s (1× H100, unoptimised runner) | Baseline for the fine-tune |
-| `kev-base-4b` | Kev-4B (Qwen3.5-4B base), out of the box | **0.84** · 78% · 13.7% | **0.75** · 70% · 13.4% | 3.6 s (OpenRouter) | Benchmarked |
-| `laya-tuned-0.4b-v2` | Laya (ModernBERT-large, 0.4B) fine-tuned by us on the same records | **0.86** · 89% · 28.8% | **0.73** · 74% · 21.2% | 0.07 s (1× L4 GPU) | Too small: flags 29% of legitimate cases |
-| `laya-tuned-0.4b` | Our earlier Laya fine-tune (older question set) | **0.81** · 99% · 75.2% | not clean (trained on these) | 0.06 s (1× L4 GPU) | Retired |
-| `laya-base-0.4b` | Laya, out of the box | **0.77** · 95% · 87.6% | **0.58** · 80% · 73.8% | 0.06 s (1× L4 GPU) | Baseline |
-| `strands-base-2b` | AWS Strands Decider 2B, out of the box | **0.74** · 80% · 57.5% | not run | 6.8 s (Mac) | Benchmarked |
+| `kev-tuned-9b` | Kev-9B (Qwen3.5-9B base) fine-tuned by us on 4,375 clean records | **0.93** (0.90–0.95) · 89% · 4.6% | **0.89** (0.87–0.91) · 87% · 7.1% | 0.38 s (1× H100, unoptimised runner) | **Active:** matches Jev; weak on tool calls; needs a GPU server |
+| `clef-base-9b` | Cloudflare Clef-flash 9B, out of the box | **0.87** (0.83–0.90) · 79% · 4.6% | **0.73** (0.70–0.75) · 69% · 16.5% | 0.26 s (OpenRouter) | Benchmarked |
+| `kev-base-9b` | Kev-9B, out of the box | **0.86** (0.82–0.89) · 81% · 13.7% | **0.74** (0.71–0.76) · 73% · 19.4% | 2.6 s (1× H100, unoptimised runner) | Baseline for the fine-tune |
+| `kev-base-4b` | Kev-4B (Qwen3.5-4B base), out of the box | **0.84** (0.80–0.87) · 78% · 13.7% | **0.75** (0.72–0.77) · 70% · 13.4% | 3.6 s (OpenRouter) | Benchmarked |
+| `laya-tuned-0.4b-v2` | Laya (ModernBERT-large, 0.4B) fine-tuned by us on the same records | **0.86** (0.83–0.89) · 89% · 28.8% | **0.73** (0.71–0.76) · 74% · 21.2% | 0.07 s (1× L4 GPU) | Too small: flags 29% of legitimate cases |
+| `laya-tuned-0.4b` | Our earlier Laya fine-tune (older question set) | **0.81** (0.77–0.84) · 99% · 75.2% | not clean (trained on these) | 0.06 s (1× L4 GPU) | Retired |
+| `laya-base-0.4b` | Laya, out of the box | **0.77** (0.73–0.80) · 95% · 87.6% | **0.58** (0.56–0.61) · 80% · 73.8% | 0.06 s (1× L4 GPU) | Baseline |
+| `strands-base-2b` | AWS Strands Decider 2B, out of the box | **0.74** (0.70–0.78) · 80% · 57.5% | not run | 0.71 s (Mac) | Benchmarked |
 | **Self-hosted classifier: a safety model we run locally** | | | | | |
-| `safeguard-20b` | OpenAI gpt-oss-safeguard 20B: a reasoning model that follows whatever policy it is given; given our judge's policies, one call per policy | **0.93** · 89% · 4.6% | **0.83** · 72% · 1.2% | 3.7 s (Mac) | Benchmarked |
-| `nemotron-cs-4b` | NVIDIA Nemotron 3.5 Content Safety 4B, given our policy text as a custom policy | **0.84** · 77% · 11.8% | **0.77** · 67% · 4.8% | 4.5 s (Mac) | Benchmarked |
-| `granite-guardian-8b` | IBM Granite Guardian 4.1 8B: built-in jailbreak and harm checks, custom criteria for agent content | **0.83** · 78% · 17.6% | **0.75** · 63% · 3.7% | 1.7 s (Mac) | Benchmarked |
-| `shieldstral-3b` | Mistral Shieldstral 1.0 3B: one score per yes/no policy question | **0.82** · 73% · 9.2% | **0.72** · 59% · 3.8% | 0.54 s (Mac) | Benchmarked |
-| `qwen3guard-4b` | Alibaba Qwen3Guard-Gen 4B: fixed safety categories, including jailbreak | **0.80** · 72% · 12.4% | **0.76** · 65% · 4.7% | 0.73 s (Mac) | Benchmarked |
-| `qwen3guard-0.6b` | Qwen3Guard-Gen 0.6B: the same, smaller | **0.78** · 71% · 17.0% | **0.76** · 67% · 7.5% | 0.14 s (Mac) | Benchmarked |
-| `sentinel-v2` | rogue-security (Qualifire) Sentinel v2: prompt-injection and jailbreak classifier; user-side text only † | **0.74** · 69% · 28.1% | **0.82** · 71% · 1.5% | 0.04 s (Mac) | Benchmarked ‡ |
-| `llama-guard4-12b` | Meta Llama Guard 4 12B: content-safety model with no prompt-injection category; 4,000-token context § | **0.39** · 26% · 11.1% | **0.30** · 20% · 10.3% | 1.3 s (Mac) | Benchmarked |
-| `pg2-86m` | Meta Llama Prompt Guard 2 86M: prompt-injection and jailbreak classifier; user-side text only † | **0.32** · 19% · 0.0% | **0.60** · 45% · 3.5% | 0.02 s (Mac) | Benchmarked |
-| `deberta-pi-v2` | ProtectAI DeBERTa-v3 prompt-injection v2 (now hosted by Red Hat); user-side text only † | **0.30** · 19% · 12.4% | **0.68** · 61% · 14.2% | 0.02 s (Mac) | Benchmarked |
-| `pg2-22m` | Meta Llama Prompt Guard 2 22M; user-side text only † | **0.13** · 7% · 0.0% | **0.37** · 22% · 0.0% | 0.01 s (Mac) | Benchmarked |
+| `safeguard-20b` | OpenAI gpt-oss-safeguard 20B: a reasoning model that follows whatever policy it is given; given our judge's policies, one call per policy | **0.93** (0.90–0.95) · 89% · 4.6% | **0.83** (0.80–0.85) · 72% · 1.2% | 3.7 s (Mac) | Benchmarked |
+| `nemotron-cs-4b` | NVIDIA Nemotron 3.5 Content Safety 4B, given our policy text as a custom policy | **0.84** (0.80–0.87) · 77% · 11.8% | **0.77** (0.74–0.80) · 67% · 4.8% | 4.5 s (Mac) | Benchmarked |
+| `granite-guardian-8b` | IBM Granite Guardian 4.1 8B: built-in jailbreak and harm checks, custom criteria for agent content | **0.83** (0.79–0.87) · 78% · 17.6% | **0.75** (0.72–0.78) · 63% · 3.7% | 1.7 s (Mac) | Benchmarked |
+| `shieldstral-3b` | Mistral Shieldstral 1.0 3B: one score per yes/no policy question | **0.82** (0.77–0.85) · 73% · 9.2% | **0.72** (0.69–0.75) · 59% · 3.8% | 0.54 s (Mac) | Benchmarked |
+| `qwen3guard-4b` | Alibaba Qwen3Guard-Gen 4B: fixed safety categories, including jailbreak | **0.80** (0.76–0.84) · 72% · 12.4% | **0.76** (0.74–0.79) · 65% · 4.7% | 0.73 s (Mac) | Benchmarked |
+| `qwen3guard-0.6b` | Qwen3Guard-Gen 0.6B: the same, smaller | **0.78** (0.74–0.82) · 71% · 17.0% | **0.76** (0.73–0.78) · 67% · 7.5% | 0.14 s (Mac) | Benchmarked |
+| `sentinel-v2` | rogue-security (Qualifire) Sentinel v2: prompt-injection and jailbreak classifier; user-side text only † | **0.74** (0.70–0.79) · 69% · 28.1% | **0.82** (0.80–0.84) · 71% · 1.5% | 0.04 s (Mac) | Benchmarked ‡ |
+| `llama-guard4-12b` | Meta Llama Guard 4 12B: content-safety model with no prompt-injection category; 4,000-token context § | **0.39** (0.33–0.45) · 26% · 11.1% | **0.30** (0.26–0.34) · 20% · 10.3% | 1.3 s (Mac) | Benchmarked |
+| `pg2-86m` | Meta Llama Prompt Guard 2 86M: prompt-injection and jailbreak classifier; user-side text only † | **0.32** (0.26–0.39) · 19% · 0.0% | **0.60** (0.56–0.63) · 45% · 3.5% | 0.02 s (Mac) | Benchmarked |
+| `deberta-pi-v2` | ProtectAI DeBERTa-v3 prompt-injection v2 (now hosted by Red Hat); user-side text only † | **0.30** (0.23–0.37) · 19% · 12.4% | **0.68** (0.65–0.71) · 61% · 14.2% | 0.02 s (Mac) | Benchmarked |
+| `pg2-22m` | Meta Llama Prompt Guard 2 22M; user-side text only † | **0.13** (0.08–0.19) · 7% · 0.0% | **0.37** (0.32–0.40) · 22% · 0.0% | 0.01 s (Mac) | Benchmarked |
 
 **How to read it:**
 - **F1** combines attacks caught and legitimate cases wrongly flagged into one score from 0 to 1. **Caught** is the
   share of attacks blocked; **false alarms** is the share of legitimate cases blocked.
+- **The range after each F1** is its 95% bootstrap interval, about ±0.02–0.03 with these set sizes. Guards whose
+  ranges overlap are not measurably different. On our test set, `kev-tuned-9b`, `safeguard-20b`, `jev-base` and the
+  two judges all overlap. Generated by
+  [comparison_table.py](evals/lab/experiments/comparison_table.py).
 - **Watch the false alarms, not just F1.** A guard that blocks everything scores F1 0.77 on our test set and 0.61
   on the public benchmarks, because both have many attacks. The small Laya and Strands models land near that by
   flagging most legitimate cases.
@@ -640,8 +649,10 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 *Hosted decision APIs*
 
 - [x] Jev tuned and validated (`jev-base`, [docs/jev-evaluation.md](docs/jev-evaluation.md)): F1 0.92 on our test set
-  and 0.88 on public benchmarks, at 0.22 s per check. As a pre-filter it answers 82–84% of legitimate checks.
-- [ ] Jev pre-filter as a drop-in LiteLLM guardrail in front of agentic-security, then an agent-loop test.
+  and 0.88 on public benchmarks, at 0.22 s per check. Optionally stacked in front of the judge, it answers 82–84% of
+  legitimate checks.
+- [ ] Option, not planned: stack Jev in front of agentic-security (two modular guardrails, or one custom guardrail
+  with both checks). The held-out numbers above suggest it would cut judge calls on most legitimate traffic.
 - [x] Fine-tune Kev-9B and Laya on one clean training set ([docs/data-provenance.md](docs/data-provenance.md)) with
   the Jev questions: Kev-9B matches Jev overall, Laya 0.4B does not ([docs/decision-model-size.md](docs/decision-model-size.md)).
 - [ ] Kev-9B: add unsafe tool-call training data (it catches 54% vs Jev's 89%), then measure serving latency on an

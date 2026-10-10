@@ -150,20 +150,20 @@ Plain replies are excluded, since agentic-security doesn't screen them.
 
 - **Jev is applicable to runtime protection.** Tuned with the judge's own policies as questions and the right
   context per stage, it matches or beats both LLM judges on held-out F1 at about 0.23 s per check.
-- **Recommended role: a pre-filter in front of agentic-security,** clearing checks that score below 0.27. It
-  removes most judge calls on legitimate traffic and keeps the judge's precision.
+- **Role: a strong guard on its own, and optionally stacked in front of agentic-security.** Stacked, it clears
+  checks scoring below 0.27, which removes most judge calls on legitimate traffic and keeps the judge's precision.
+  Stacking is an option, not a design requirement. It can be deployed as two modular, stackable guardrails, or with
+  both checks built into one custom guardrail.
 - **Standalone use** (no judge) gives higher recall but more false positives on cyber requests and public
   injection sets (7–9% vs 2–6%).
 - **Deployment caveats:**
   - Jev is a third-party hosted model via OpenRouter, a vendor and data-residency question for an enterprise.
   - OpenRouter credits and limits are a hard dependency; the overnight run stopped on credits.
-  - A drop-in LiteLLM guardrail for the pre-filter isn't built yet.
+  - A drop-in LiteLLM guardrail for Jev isn't built yet.
 
 ## Next
 
-1. **Build the pre-filter as a drop-in:** `deploy/jev-prefilter/`, or a Jev stage inside agentic-security. Jev clears
-   checks scoring below 0.27, and the judge decides the rest. It would be stateless, like agentic-security.
-2. **Agent-loop test of the cascade:** run the four-arm agent eval with the pre-filter in front of agentic-security,
-   to measure task success and latency per step.
-3. **Self-hosted alternative:** run the same question set on self-hosted decision models (Laya, our fine-tuned
+1. **Optional, not planned:** a drop-in Jev guardrail (stateless, like agentic-security) that can be stacked in front
+   of the judge, or a Jev stage inside one custom guardrail. Before relying on it, test the stack in the agent loop.
+2. **Self-hosted alternative** (done, [decision-model-size.md](decision-model-size.md)): run the same question set on self-hosted decision models (Laya, our fine-tuned
    `laya-tuned-0.4b-stockq`, Clef-flash 9B) through the same adapter.

@@ -17,6 +17,7 @@ and evaluating their gateway behavior.
 | [guardrail-placement.md](guardrail-placement.md) | Where to put the guardrail in LiteLLM: the during_call chargeback test, pre-call vs action-check coverage of agentic risk, the recommended `cyber-guard` config |
 | [chargeback.md](chargeback.md) | Billing the judge guardrail's model calls to the caller's LiteLLM key (verified in the spend DB) |
 | [judge.md](judge.md) | LLM-as-a-judge design and tuning history, including selected cyber policy v4 and frozen validation |
+| [agentic-cyber-tuning-handoff.md](agentic-cyber-tuning-handoff.md) | Handoff: raise agentic-security's catch rate on malicious cyber requests — goal, misses by tactic tag, exact tuning loop and acceptance rules |
 | [cyber-tuning-handoff.md](cyber-tuning-handoff.md) | Historical cyber-tuning handoff; the selected v4 outcome is recorded in judge.md, rounds K27–K34 |
 | [cyber-policy-plan.md](cyber-policy-plan.md) | Original malicious-cyber-policy specification; v4 implementation and current tradeoffs are recorded in judge.md |
 | [decision-apis.md](decision-apis.md) | Decision APIs and self-hosted decision models: schemas, guards, the test double, switching to the OpenAI Decisions API |

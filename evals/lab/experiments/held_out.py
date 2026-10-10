@@ -22,6 +22,7 @@ at, for fine-tunes whose scores are not on Jev's threshold scale.
 
 import argparse
 import json
+import random
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -105,6 +106,21 @@ def modal_results(name: str) -> dict:
     return out
 
 
+def f1_interval(pairs, n: int = 1000, seed: int = 0) -> tuple:
+    """95% bootstrap interval for F1 (cases resampled with replacement; fixed seed, so reports are reproducible).
+    With about 400 cases it is roughly +/-0.03: closer results than that are not a measured difference."""
+    rng = random.Random(seed)
+    outcomes = [(label == "attack", bool(blocked)) for label, blocked, _ in pairs]
+
+    def f1(sample) -> float:
+        tp = sum(a and b for a, b in sample)
+        fp = sum(b and not a for a, b in sample)
+        fn = sum(a and not b for a, b in sample)
+        return 2 * tp / max(1, 2 * tp + fp + fn)
+    f1s = sorted(f1([rng.choice(outcomes) for _ in outcomes]) for _ in range(n))
+    return f1s[int(0.025 * n)], f1s[int(0.975 * n) - 1]
+
+
 def metrics(pairs) -> dict:
     att = [(b, s) for l, b, s in pairs if l == "attack"]
     ben = [(b, s) for l, b, s in pairs if l == "benign"]
@@ -118,8 +134,8 @@ def metrics(pairs) -> dict:
 def report(gids: list):
     data = sets()
     record = {}
-    print(f"{'guard':26s} {'set':11s} {'screened':>9s} {'F1 whole':>9s} {'F1 screened':>12s} {'caught':>7s} {'flagged':>8s} "
-          f"{'AUROC':>6s}")
+    print(f"{'guard':26s} {'set':11s} {'screened':>9s} {'F1 whole':>9s} {'95% CI':>12s} {'F1 screened':>12s} {'caught':>7s} "
+          f"{'flagged':>8s} {'AUROC':>6s}")
     for gid in gids:
         modal = gid.startswith("modal:")
         res = modal_results(gid[6:]) if modal else registry_results(gid)
@@ -129,13 +145,15 @@ def report(gids: list):
             if not got:
                 continue
             unscreenable = [r for r in rows if stages is not None and r["stage"] not in stages]
-            whole = metrics(got + [(r["label"], False, None) for r in unscreenable])   # let through, as in a gateway
+            pairs = got + [(r["label"], False, None) for r in unscreenable]   # let through, as in a gateway
+            whole = metrics(pairs)
+            lo, hi = f1_interval(pairs)
             m = metrics(got)
             cov = len(got) / len(rows)
             flag = "" if len(got) + len(unscreenable) == len(rows) else "  <- incomplete"
-            print(f"{gid:26s} {name:11s} {100 * cov:8.1f}% {whole['f1']:9.3f} {m['f1']:12.3f} {100 * whole['recall']:6.1f}% "
-                  f"{100 * whole['fpr']:7.1f}% {m['auroc']:6.3f}{flag}")
-            record.setdefault(gid, {})[name] = whole | {"coverage": cov, "screened": m}
+            print(f"{gid:26s} {name:11s} {100 * cov:8.1f}% {whole['f1']:9.3f} {f'{lo:.2f}-{hi:.2f}':>12s} {m['f1']:12.3f} "
+                  f"{100 * whole['recall']:6.1f}% {100 * whole['fpr']:7.1f}% {m['auroc']:6.3f}{flag}")
+            record.setdefault(gid, {})[name] = whole | {"coverage": cov, "screened": m, "f1_ci95": [lo, hi]}
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(record, indent=1))
 
