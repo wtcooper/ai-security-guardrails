@@ -21,9 +21,11 @@ The best performer in each of the four approaches, on the same two held-out test
 | **Self-hosted decision model** | `kev-tuned-9b` | Kev-9B (open weights) fine-tuned by us on clean public data, asked the same questions | **0.93** / **0.89** | 0.38 s (one H100, unoptimised runner) | about $0.42 on a rented H100 at that speed (estimate; batching would cut it) | **Active:** matches Jev; weaker on agent tool calls; needs a GPU server |
 | **Self-hosted classifier** | `safeguard-20b` | OpenAI gpt-oss-safeguard 20B (open weights), a reasoning model following our judge's policies | **0.93** / 0.83 | 3.7 s (Mac) | own hardware; needs a GPU server in production | Benchmarked; not under active tuning |
 
-F1 combines attacks caught and legitimate cases wrongly flagged into one score from 0 to 1. All 23 guardrails we
+F1 combines attacks caught and legitimate cases wrongly flagged into one score from 0 to 1. All 24 guardrails we
 compared, with attacks caught, false alarms and short descriptions, are in the
 [full comparison](#head-to-head-on-the-two-held-out-test-sets).
+Next up, not yet evaluated: Microsoft-Decision-1, the OpenAI Decisions API, Google Model Armor, Azure Prompt
+Shields and others ([contenders](#not-yet-evaluated-other-top-contenders-to-do)).
 
 **`agentic-security`** ([docs](docs/agentic-security.md), [deploy/agentic-security/](deploy/agentic-security/)) is
 one Python file, two prompt files and a config entry, with no cache, no state and no extra services.
@@ -194,6 +196,7 @@ Every guardrail we compared, grouped by approach. All scored on the same two hel
 | **LLM-as-a-judge: a hosted LLM reads our written policies** | | | | | |
 | `agentic-security` | Drop-in LiteLLM guardrail. gpt-6-luna rates the last 10 messages: one call before the model, one after only if it calls tools. Cuts injected lines out of tool results so the agent keeps working | **0.91** · 85% · 4.6% | **0.86** · 78% · 1.9% | 0.90 s (OpenAI API) | **Active, ready to deploy** |
 | `cyber-guard` | Lab judge: same model and policies, one call per piece of content; affordable only with a verdict cache | **0.91** · 86% · 5.2% | **0.86** · 78% · 2.2% | 0.84 s (OpenAI API) | Lab only |
+| `agentic-security-sys` | agentic-security with the application's system prompt also shown to the judge | **0.91** · 87% · 5.9% | **0.87** · 79% · 1.8% | 0.81 s (OpenAI API) | Measured alternative: more false blocks on tool calls; keep off |
 | **Hosted decision API: a provider's decision model answers our yes/no questions** | | | | | |
 | `jev-base` | TypeSafe Jev via OpenRouter, asked our tuned questions (the judge's policies phrased as questions); one call returns a probability per question | **0.92** · 88% · 4.6% | **0.88** · 87% · 8.6% | 0.22 s (OpenRouter) | **Active:** pre-filter in front of the judge |
 | `jev-base-stockq` | Same model with the original generic security questions | **0.89** · 85% · 9.2% | **0.87** · 85% · 8.7% | 0.22 s (OpenRouter) | Superseded by jev-base |
@@ -241,6 +244,23 @@ More detail:
 - [docs/agentic-security.md](docs/agentic-security.md): judges, latency and agent loops.
 - [docs/jev-evaluation.md](docs/jev-evaluation.md): Jev tuning and the pre-filter.
 - [docs/decision-model-size.md](docs/decision-model-size.md): decision models by size and fine-tuning, by attack type.
+
+### Not yet evaluated: other top contenders (to do)
+
+Strong options we haven't scored yet, to run on the same two held-out test sets when access allows:
+
+| Contender | Approach | What it is | What's needed |
+|---|---|---|---|
+| **Microsoft-Decision-1** | Hosted decision API | Microsoft's decision model (post-trained Qwen3.5-9B), launched 2026-10-09; Foundry now, OpenRouter "coming soon". Same System One protocol as Jev, so our questions apply unchanged | An Azure subscription with a Foundry deployment, or the OpenRouter listing ([plan](docs/microsoft-decision-1-plan.md)) |
+| **OpenAI Decisions API** | Hosted decision API | gpt-6-luna answering typed questions with probabilities | Preview access; `dec-openai` is registered and returns 403 until then |
+| Perplexity `pplx-decider-v1-27b` | Hosted API or self-hosted decision model | 27B decision model with open weights (Apache-2.0) and a hosted API; ahead of Jev on its own benchmarks | A Perplexity API key, or a rented GPU |
+| Cloudflare Clef (27B) | Hosted decision API | The full-size Clef; we have only tested Clef-flash 9B | A Cloudflare account (Workers AI) |
+| Intern-Decision-4B, Decision-2.0-Lux-9B, Eikos-27B | Self-hosted decision models | Open decision models from InternLM, vLLM Semantic Router (claims 18 ms) and an independent author (best open model on LangWatch) | A rented GPU (Modal) |
+| **Google Model Armor** | Cloud guardrail API | Hosted prompt-injection, jailbreak, malicious-URL and sensitive-data filters | A GCP project with the API enabled ([plan](docs/model-armor-plan.md)) |
+| **Azure AI Content Safety Prompt Shields** | Cloud guardrail API | Detects user prompt attacks and attacks hidden in documents; callable as a standalone resource | An Azure subscription (the same one would cover Decision-1) |
+| AWS Bedrock Guardrails | Cloud guardrail API | Content filters, including a prompt-attack filter, via ApplyGuardrail. AWS says the prompt-attack filter doesn't evaluate tool results | An AWS account |
+| Lakera Guard, Palo Alto Prisma AIRS | Commercial guardrail APIs | Agent-aware screening of prompts, tool calls and tool results | Run at work through a `gateway_guardrail` adapter |
+| Fastino GLiGuard-300M | Self-hosted classifier | Small Apache-licensed guard model; watch list | None (local) |
 
 ### Earlier results (older policies and test cases)
 
@@ -626,6 +646,8 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
   the Jev questions: Kev-9B matches Jev overall, Laya 0.4B does not ([docs/decision-model-size.md](docs/decision-model-size.md)).
 - [ ] Kev-9B: add unsafe tool-call training data (it catches 54% vs Jev's 89%), then measure serving latency on an
   optimised server.
+- [ ] Microsoft-Decision-1 on both held-out test sets ([plan](docs/microsoft-decision-1-plan.md)): needs an Azure
+  Foundry deployment or the OpenRouter listing; the Jev adapter needs an `api-key` header option.
 - [ ] `dec-openai`: rerun once OpenAI Decisions API access is granted (currently 403), then retire
   `dec-luna-emu` from the results.
 - [ ] Optional: Perplexity's Decisions API, and Cloudflare Clef hosted on Workers AI (needs an account
@@ -666,6 +688,13 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
   traded false positives for recall ([round](docs/agentic-security.md#cyber-recall-tuning-round-2026-10-07-tried-not-adopted)),
   so this needs shared-policy content changes.
 - [ ] agentic-security: detect off-task drift ("autonomy hijack") in tool results; 2 of 6 still succeed, as with no guardrail.
+- [ ] agentic-security: rerun the agent-loop evals (AgentDojo, AgentThreatBench) on the current version. The new refusal
+  wording and turn-wide tool-result re-rating could change task success.
+- [ ] LiteLLM gap: streamed `/v1/messages` replies skip post-call guardrails, so a flagged tool call reaches Claude
+  Code. Report upstream, or add a custom streaming hook (testing it needs an Anthropic key).
+- [ ] LiteLLM gap: its Responses-API refusal for a pre-call block is malformed; report upstream.
+- [ ] Decide whether the judge should see `developer` messages (Codex app instructions) as context; today they're
+  dropped with the system prompt.
 - [x] `agentic-security`: drop-in guardrail with a 10-message window (user intent and drift as context), no cache,
   surgical withholding of flagged tool results and hedged judge calls; see [docs/agentic-security.md](docs/agentic-security.md).
 - [ ] agentic-security: tune delegated-task false withholds on a separate dev set (not AgentDojo).

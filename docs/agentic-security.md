@@ -136,6 +136,14 @@ safety-heavy one ([experiment](../evals/lab/experiments/system_prompt.py)):
 - **It does matter for tool calls:** with it, unsafe calls caught went from 85% to 90%, and legitimate calls blocked
   from 1% to 7%.
 - **Recommendation:** leave it off by default; `agentic-security-sys` is the measured alternative.
+- **Confirmed on the held-out test sets (2026-10-10).** In our cyber & agent test set, only the 48 tool-call cases
+  carry a system prompt.
+  - With it, the judge caught the same 89% of unsafe tool calls, but blocked 5 of 22 legitimate ones instead of 3
+    (22.7% vs 13.6%).
+  - Overall F1 was 0.91 either way, and 0.87 vs 0.86 on the public benchmarks.
+  - Other slices moved by up to 0.03 F1 even though their inputs were identical, which is the judge's run-to-run
+    noise.
+  - Keep it off.
 
 ### Latency: classifier time only, no inference
 

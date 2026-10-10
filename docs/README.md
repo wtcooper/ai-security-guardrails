@@ -7,6 +7,7 @@ and evaluating their gateway behavior.
 |---|---|
 | [benchmark.md](benchmark.md) | The combined cyber benchmark (OWASP LLM/MCP/Agentic + MITRE coverage map) and the five public benchmarks |
 | [lab.md](lab.md) | How the evaluation works: corpus, splits, run modes, scoring, adding a guard, gotchas |
+| [microsoft-decision-1-plan.md](microsoft-decision-1-plan.md) | Plan for adding Microsoft-Decision-1 (hosted decision API on Foundry / OpenRouter): what it is, Azure setup, adapter change |
 | [model-armor-plan.md](model-armor-plan.md) | Plan for adding Google Cloud Model Armor: GCP setup checklist, adapter design, LiteLLM gaps |
 | [decision-model-size.md](decision-model-size.md) | Self-hosted decision models by size and fine-tuning (Laya 0.4B to Kev-9B) vs Jev on the two held-out test sets |
 | [data-provenance.md](data-provenance.md) | Training and evaluation corpus: every source, licence, split, exclusion and contamination control; model-weight licences; future data sources |
