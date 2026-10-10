@@ -25,8 +25,8 @@ F1 combines attacks caught and legitimate cases wrongly flagged into one score f
 are within about 0.03 of each other, inside the run-to-run noise. All 24 guardrails we
 compared, with attacks caught, false alarms and short descriptions, are in the
 [full comparison](#head-to-head-on-the-two-held-out-test-sets).
-Next up, not yet evaluated: Microsoft-Decision-1, the OpenAI Decisions API, Google Model Armor, Azure Prompt
-Shields and others ([contenders](#not-yet-evaluated-other-top-contenders-to-do)).
+Next up, not yet evaluated: Microsoft-Decision-1, the OpenAI Decisions API, Google Model Armor, Azure AI
+Content Safety and others ([contenders](#not-yet-evaluated-other-top-contenders-to-do)).
 
 **`agentic-security`** ([docs](docs/agentic-security.md), [deploy/agentic-security/](deploy/agentic-security/)) is
 one Python file, two prompt files and a config entry, with no cache, no state and no extra services.
@@ -266,7 +266,7 @@ Strong options we haven't scored yet, to run on the same two held-out test sets 
 | Cloudflare Clef (27B) | Hosted decision API | The full-size Clef; we have only tested Clef-flash 9B | A Cloudflare account (Workers AI) |
 | Intern-Decision-4B, Decision-2.0-Lux-9B, Eikos-27B | Self-hosted decision models | Open decision models from InternLM, vLLM Semantic Router (claims 18 ms) and an independent author (best open model on LangWatch) | A rented GPU (Modal) |
 | **Google Model Armor** | Cloud guardrail API | Hosted prompt-injection, jailbreak, malicious-URL and sensitive-data filters | A GCP project with the API enabled ([plan](docs/model-armor-plan.md)) |
-| **Azure AI Content Safety Prompt Shields** | Cloud guardrail API | Detects user prompt attacks and attacks hidden in documents; callable as a standalone resource | An Azure subscription (the same one would cover Decision-1) |
+| **Azure AI Content Safety** | Cloud guardrail API | Azure's safety resource. It includes Prompt Shields, which detects user prompt attacks and attacks hidden in documents, as well as content-safety categories; callable as a standalone resource | An Azure subscription (the same one would cover Decision-1) |
 | AWS Bedrock Guardrails | Cloud guardrail API | Content filters, including a prompt-attack filter, via ApplyGuardrail. AWS says the prompt-attack filter doesn't evaluate tool results | An AWS account |
 | Lakera Guard, Palo Alto Prisma AIRS | Commercial guardrail APIs | Agent-aware screening of prompts, tool calls and tool results | Run at work through a `gateway_guardrail` adapter |
 | Fastino GLiGuard-300M | Self-hosted classifier | Small Apache-licensed guard model; watch list | None (local) |
@@ -681,7 +681,7 @@ docs/              lab guide, judge tuning log, decision APIs, research notes (i
 - [ ] Google Cloud Model Armor on both held-out test sets ([plan](docs/model-armor-plan.md)). Needs a GCP project
   with billing, the Model Armor API enabled and gcloud login credentials; the Vertex API key won't work. Then a
   thin adapter. A full run fits in the free tier.
-- [ ] AWS Bedrock Guardrails and Azure Prompt Shields on the same sets, to match the work comparison.
+- [ ] AWS Bedrock Guardrails and Azure AI Content Safety (Prompt Shields) on the same sets, to match the work comparison.
 
 *Self-hosted classifiers*
 
